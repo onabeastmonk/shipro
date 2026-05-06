@@ -70,7 +70,9 @@ export function getJobStatusColor(status: JobStatus): string {
   const colors: Record<JobStatus, string> = {
     draft: 'bg-bg-tertiary text-text-secondary border-border',
     posted: 'bg-info-bg text-info border-info-border',
-    pending_assignment: 'bg-warning-bg text-warning border-warning-border',
+open_for_applications: 'bg-info-bg text-info border-info-border',
+pending_selection: 'bg-warning-bg text-warning border-warning-border',
+pending_assignment: 'bg-warning-bg text-warning border-warning-border',
     assigned: 'bg-bg-elevated text-text-primary border-border-secondary',
     accepted: 'bg-bg-elevated text-text-primary border-border-secondary',
     at_pickup: 'bg-warning-bg text-warning border-warning-border',
@@ -105,7 +107,7 @@ export function checkDocumentStatus(expiryDate: string | null, warningDays = 30)
 
 export function getJobStatusStep(status: JobStatus): number {
   const steps: Record<JobStatus, number> = {
-    draft: 0, posted: 0, pending_assignment: 0, assigned: 0,
+    draft: 0, posted: 0, open_for_applications: 0, pending_selection: 0, pending_assignment: 0, assigned: 0,
     accepted: 1, at_pickup: 2, loaded: 3, in_transit: 4,
     arrived: 5, delivered: 6, completed: 7, cancelled: -1,
   }
