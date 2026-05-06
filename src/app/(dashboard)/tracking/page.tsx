@@ -210,7 +210,7 @@ export default function TrackingPage() {
                     <div className="text-xs text-text-muted">{formatDate(job.delivery_date)}</div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className={`status-badge ${getJobStatusColor(detailJob.status as any)}`}>{JOB_STATUS_LABELS[detailJob.status as any]}</span>
+                    <span className={`status-badge ${getJobStatusColor(job.status)}`}>{JOB_STATUS_LABELS[job.status]}</span>
                     {isSelected && <span className="text-xs text-success">● On map</span>}
                   </div>
                 </div>
