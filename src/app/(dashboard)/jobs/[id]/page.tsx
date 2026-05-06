@@ -19,7 +19,8 @@ export default function JobDetailPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
-  const [userTruck, setUserTruck] = useState<any>(null)
+  const [userTrucks, setUserTrucks] = useState<any[]>([])
+  const [selectedTruckId, setSelectedTruckId] = useState<string>('')
   const [applying, setApplying] = useState(false)
   const [myApplication, setMyApplication] = useState<any>(null)
   const [showApproveConfirm, setShowApproveConfirm] = useState<any>(null)
@@ -33,10 +34,16 @@ export default function JobDetailPage() {
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       setUserRole(profile?.role || null)
 
-      // Load driver's truck if they're a driver
+      // Load all driver's approved and available trucks
       if (profile?.role === 'driver') {
-        const { data: truck } = await supabase.from('trucks').select('*').eq('owner_id', session.user.id).eq('verification_status', 'approved').single()
-        setUserTruck(truck || null)
+        const { data: trucks } = await supabase
+          .from('trucks')
+          .select('*')
+          .eq('owner_id', session.user.id)
+          .eq('verification_status', 'approved')
+          .eq('availability', 'available')
+        setUserTrucks(trucks || [])
+        if (trucks && trucks.length > 0) setSelectedTruckId(trucks[0].id)
       }
 
       await loadJob(session.user.id)
@@ -77,15 +84,19 @@ export default function JobDetailPage() {
   }
 
   async function handleApply() {
-    if (!userId || !userTruck) {
-      toast.error('You need a verified truck to apply')
+    if (!userId || !selectedTruckId) {
+      toast.error('Please select a truck to apply with')
+      return
+    }
+    if (userTrucks.length === 0) {
+      toast.error('You need an approved available truck to apply')
       return
     }
     setApplying(true)
     try {
       const { error } = await supabase.from('job_applicants').insert({
         job_order_id: id,
-        truck_id: userTruck.id,
+        truck_id: selectedTruckId,
         driver_id: userId,
         status: 'pending',
       })
@@ -302,18 +313,45 @@ export default function JobDetailPage() {
             <div className="text-xs font-semibold text-text-muted uppercase mb-3">Your Application</div>
             {!myApplication ? (
               <div>
-                {!userTruck ? (
+                {userTrucks.length === 0 ? (
                   <div className="bg-warning-bg border border-warning-border rounded p-3 mb-3">
-                    <p className="text-xs text-warning">⚠️ You need an approved truck to apply. <Link href="/fleet/register" className="underline">Register one</Link>.</p>
+                    <p className="text-xs text-warning">⚠️ You need an approved available truck to apply. <Link href="/fleet/register" className="underline">Register one</Link>.</p>
+                    <p className="text-xs text-text-muted mt-1">Note: Trucks currently on a job are not available until the job is completed.</p>
                   </div>
                 ) : (
-                  <div className="bg-bg-tertiary rounded p-3 mb-3 text-xs text-text-secondary">
-                    Applying with: <strong className="text-text-primary">{userTruck.plate_number}</strong> · {userTruck.truck_type_label} · {userTruck.cbm_capacity} CBM
+                  <div className="mb-3">
+                    <label className="text-xs text-text-muted font-semibold uppercase mb-2 block">Select Truck to Apply With</label>
+                    <div className="space-y-2">
+                      {userTrucks.map((truck: any) => (
+                        <div
+                          key={truck.id}
+                          onClick={() => setSelectedTruckId(truck.id)}
+                          className={cn(
+                            'flex items-center gap-3 p-3 rounded-md border cursor-pointer transition-all',
+                            selectedTruckId === truck.id
+                              ? 'border-brand bg-bg-elevated'
+                              : 'border-border bg-bg-tertiary hover:border-border-secondary'
+                          )}
+                        >
+                          <div className={cn(
+                            'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
+                            selectedTruckId === truck.id ? 'border-brand' : 'border-border-secondary'
+                          )}>
+                            {selectedTruckId === truck.id && <div className="w-2 h-2 rounded-full bg-brand" />}
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-semibold text-text-primary">{truck.plate_number}</div>
+                            <div className="text-xs text-text-muted">{truck.truck_type_label} · {truck.cbm_capacity} CBM</div>
+                          </div>
+                          <span className="text-xs text-success font-medium">● Available</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 <button
                   onClick={handleApply}
-                  disabled={applying || !userTruck}
+                  disabled={applying || userTrucks.length === 0 || !selectedTruckId}
                   className="btn btn-primary btn-full"
                 >
                   {applying ? 'Submitting...' : '✋ Apply for this Job'}
