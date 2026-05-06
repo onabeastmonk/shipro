@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import type { User } from '@/types'
 import {
   LayoutDashboard, ClipboardList, MapPin, Truck, DollarSign,
-  Bell, LogOut, X, ChevronRight
+  Bell, LogOut, X, ChevronRight, Calendar, AlertTriangle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,16 @@ const NAV_ITEMS = [
   { href: '/tracking', label: 'Tracking', icon: MapPin },
   { href: '/fleet', label: 'Fleet', icon: Truck },
   { href: '/payroll', label: 'Payroll', icon: DollarSign },
+  { href: '/calendar', label: 'Calendar', icon: Calendar },
+  { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
+]
+
+const BOTTOM_NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/jobs', label: 'Jobs', icon: ClipboardList },
+  { href: '/tracking', label: 'Track', icon: MapPin },
+  { href: '/fleet', label: 'Fleet', icon: Truck },
+  { href: '/calendar', label: 'Calendar', icon: Calendar },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -72,15 +82,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {NAV_ITEMS.map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-md mb-0.5 transition-colors text-sm font-medium',
-                  active ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary'
-                )}
-              >
+              <Link key={item.href} href={item.href} onClick={() => setSidebarOpen(false)}
+                className={cn('flex items-center gap-3 px-3 py-2.5 rounded-md mb-0.5 transition-colors text-sm font-medium',
+                  active ? 'bg-bg-elevated text-text-primary' : 'text-text-secondary hover:bg-bg-tertiary hover:text-text-primary')}>
                 <item.icon size={18} />
                 {item.label}
               </Link>
@@ -112,17 +116,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* MAIN AREA */}
       <div className="flex-1 flex flex-col min-w-0" style={{ height: '100dvh', overflow: 'hidden' }}>
 
-        {/* Top bar — NO hamburger menu icon (removed settings bar) */}
+        {/* Top bar */}
         <header className="flex items-center justify-between px-4 py-3 bg-bg-secondary border-b border-border flex-shrink-0 z-20">
           <Link href="/dashboard">
-            <span className="font-heading text-xl font-bold text-text-primary md:hidden">
-              shi<span className="text-text-muted">PRO</span>
-            </span>
-            <span className="font-heading text-xl font-bold text-text-primary hidden md:block">
+            <span className="font-heading text-xl font-bold text-text-primary">
               shi<span className="text-text-muted">PRO</span>
             </span>
           </Link>
           <div className="flex items-center gap-2">
+            <Link href="/incidents" className="relative p-2 rounded-full hover:bg-bg-tertiary transition-colors">
+              <AlertTriangle size={18} className="text-text-secondary" />
+            </Link>
             <Link href="/profile/notifications" className="relative p-2 rounded-full hover:bg-bg-tertiary transition-colors">
               <Bell size={20} className="text-text-secondary" />
               {unreadCount > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-danger rounded-full" />}
@@ -133,45 +137,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        {/* Scrollable page content — with bottom padding for nav */}
-        <main
-          className="flex-1 scrollbar-hide smooth-scroll"
-          style={{
-            overflowY: 'auto',
-            WebkitOverflowScrolling: 'touch',
-            paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-          }}
-        >
+        {/* Page content */}
+        <main className="flex-1 scrollbar-hide smooth-scroll" style={{
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        }}>
           {children}
         </main>
 
-        {/* BOTTOM NAV — fixed, always visible on mobile */}
-        <nav
-          className="md:hidden bg-bg-secondary border-t border-border z-50"
-          style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            display: 'flex',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            minHeight: '56px',
-          }}
-        >
-          {NAV_ITEMS.map(item => {
+        {/* BOTTOM NAV */}
+        <nav className="md:hidden bg-bg-secondary border-t border-border z-50"
+          style={{ position: 'fixed', bottom: 0, left: 0, right: 0, display: 'flex', paddingBottom: 'env(safe-area-inset-bottom, 0px)', minHeight: '56px' }}>
+          {BOTTOM_NAV_ITEMS.map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                style={{ flex: 1 }}
-                className={cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors',
-                  active ? 'text-text-primary' : 'text-text-muted'
-                )}
-              >
-                <item.icon size={22} />
-                <span className="text-[10px] font-medium uppercase tracking-wide">{item.label.split(' ')[0]}</span>
+              <Link key={item.href} href={item.href} style={{ flex: 1 }}
+                className={cn('flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors',
+                  active ? 'text-text-primary' : 'text-text-muted')}>
+                <item.icon size={20} />
+                <span className="text-[9px] font-medium uppercase tracking-wide">{item.label}</span>
               </Link>
             )
           })}

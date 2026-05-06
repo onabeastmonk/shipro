@@ -5,6 +5,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { fetchPayslips, createPayslip, updatePayslipStatus } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, generatePayslipPDF, exportToCSV } from '@/lib/utils'
 import type { Payslip, PayslipForm } from '@/types'
 import { Plus, Printer, Download, ChevronLeft, X } from 'lucide-react'
@@ -211,21 +212,48 @@ function NewPayslipModal({ userId, onClose, onSave }: {
   onSave: (form: PayslipForm) => Promise<void>
 }) {
   const [loading, setLoading] = useState(false)
+  const [completedJobs, setCompletedJobs] = useState<any[]>([])
   const [form, setForm] = useState<any>({
     driver_id: '', job_order_id: '', delivery_date: '',
     pickup_location: '', dropoff_location: '', truck_type_label: '',
     base_rate: 0, additional_charges: 0, fuel_allowance: 0,
     toll_fee: 0, parking_fee: 0, deductions: 0,
-    payment_status: 'pending', remarks: '',
+    payment_status: 'pending', remarks: '', items_count: 0,
   })
+
+  useEffect(() => {
+    supabase
+      .from('job_orders')
+      .select('id, job_number, client_name, delivery_date, assigned_driver_id, base_rate, pickup_location, dropoff_location, shipment_items(*), truck:trucks(truck_type_label)')
+      .eq('status', 'completed')
+      .order('delivery_date', { ascending: false })
+      .then(({ data }) => setCompletedJobs(data || []))
+  }, [])
 
   function update(key: string, value: any) {
     setForm((f: any) => ({ ...f, [key]: value }))
   }
 
-  const total = form.base_rate + form.additional_charges + form.fuel_allowance + form.toll_fee + form.parking_fee - form.deductions
+  async function handleJobSelect(jobId: string) {
+    update('job_order_id', jobId)
+    if (!jobId) return
+    const job = completedJobs.find(j => j.id === jobId)
+    if (job) {
+      update('delivery_date', job.delivery_date || '')
+      update('pickup_location', job.pickup_location || '')
+      update('dropoff_location', job.dropoff_location || '')
+      update('truck_type_label', job.truck?.truck_type_label || '')
+      update('driver_id', job.assigned_driver_id || '')
+      update('base_rate', job.base_rate || 0)
+      const itemCount = job.shipment_items?.reduce((s: number, i: any) => s + (i.quantity || 1), 0) || 0
+      update('items_count', itemCount)
+    }
+  }
+
+  const total = (form.base_rate || 0) + (form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0) - (form.deductions || 0)
 
   async function handleSave() {
+    if (!form.job_order_id) { toast.error('Please select a completed job order'); return }
     if (!form.delivery_date || !form.pickup_location || !form.dropoff_location) {
       toast.error('Fill in required fields')
       return
@@ -240,31 +268,48 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
-      <div className="bg-bg-secondary w-full rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide" style={{maxWidth:'430px',margin:'0 auto'}}>
+      <div className="bg-bg-secondary w-full rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide" style={{maxWidth:'480px',margin:'0 auto'}}>
         <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1" />
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h2 className="font-heading text-base font-semibold">New Payslip</h2>
           <button onClick={onClose}><X size={18} className="text-text-muted" /></button>
         </div>
         <div className="p-4 space-y-4">
+
+          {/* Step 1: Select completed job */}
           <div>
-            <label className="form-label">Delivery Date *</label>
-            <input className="form-input" type="date" value={form.delivery_date} onChange={e => update('delivery_date', e.target.value)} />
+            <label className="form-label">Select Completed Job Order *</label>
+            {completedJobs.length === 0 ? (
+              <div className="bg-warning-bg border border-warning-border rounded-md p-3 text-xs text-warning">
+                ⚠️ No completed job orders found. Only completed deliveries can generate payslips.
+              </div>
+            ) : (
+              <select className="form-input" value={form.job_order_id} onChange={e => handleJobSelect(e.target.value)}>
+                <option value="">— Select a completed job —</option>
+                {completedJobs.map((job: any) => (
+                  <option key={job.id} value={job.id}>
+                    {job.job_number} · {job.client_name} · {job.delivery_date}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
-          <div>
-            <label className="form-label">Pickup Location *</label>
-            <input className="form-input" placeholder="Pickup address" value={form.pickup_location} onChange={e => update('pickup_location', e.target.value)} />
-          </div>
-          <div>
-            <label className="form-label">Drop-off Location *</label>
-            <input className="form-input" placeholder="Delivery address" value={form.dropoff_location} onChange={e => update('dropoff_location', e.target.value)} />
-          </div>
-          <div>
-            <label className="form-label">Truck Type</label>
-            <input className="form-input" placeholder="e.g. 10ft Closed Van" value={form.truck_type_label} onChange={e => update('truck_type_label', e.target.value)} />
-          </div>
+
+          {/* Auto-filled info from job */}
+          {form.job_order_id && (
+            <div className="bg-bg-tertiary border border-border rounded-lg p-3 space-y-1.5 text-xs">
+              <div className="text-text-muted font-semibold uppercase tracking-wide mb-2">Auto-filled from Job Order</div>
+              <div className="flex justify-between"><span className="text-text-muted">Delivery Date</span><span className="text-text-primary font-medium">{form.delivery_date}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Pickup</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.pickup_location}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Drop-off</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.dropoff_location}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Truck Type</span><span className="text-text-primary font-medium">{form.truck_type_label || '—'}</span></div>
+              <div className="flex justify-between"><span className="text-text-muted">Items Delivered</span><span className="text-text-primary font-bold">{form.items_count} items</span></div>
+            </div>
+          )}
+
           <div className="h-px bg-border" />
           <div className="text-xs font-bold text-text-muted uppercase tracking-widest text-center">RATE BREAKDOWN</div>
+
           <div className="grid grid-cols-2 gap-3">
             {[
               ['base_rate', 'Base Rate (₱)'],
@@ -282,10 +327,12 @@ function NewPayslipModal({ userId, onClose, onSave }: {
               </div>
             ))}
           </div>
+
           <div className="bg-bg-tertiary rounded-lg p-4 text-center">
             <div className="text-xs text-text-muted mb-1">NET TOTAL PAYOUT</div>
-            <div className="font-heading text-3xl font-bold">{formatCurrency(Math.max(0, total))}</div>
+            <div className="font-heading text-3xl font-bold">₱{Math.max(0, total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
           </div>
+
           <div>
             <label className="form-label">Payment Status</label>
             <select className="form-input" value={form.payment_status} onChange={e => update('payment_status', e.target.value)}>
@@ -294,13 +341,15 @@ function NewPayslipModal({ userId, onClose, onSave }: {
               <option value="paid">Paid</option>
             </select>
           </div>
+
           <div>
             <label className="form-label">Remarks</label>
             <textarea className="form-input" rows={2} placeholder="Optional notes" value={form.remarks} onChange={e => update('remarks', e.target.value)} />
           </div>
+
           <div className="flex gap-3 pb-6">
             <button onClick={onClose} className="btn btn-secondary flex-1">Cancel</button>
-            <button onClick={handleSave} disabled={loading} className="btn btn-primary flex-1">
+            <button onClick={handleSave} disabled={loading || !form.job_order_id} className="btn btn-primary flex-1">
               {loading ? 'Saving...' : 'Save Payslip'}
             </button>
           </div>
