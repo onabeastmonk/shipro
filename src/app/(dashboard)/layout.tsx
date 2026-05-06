@@ -98,7 +98,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-text-primary truncate">{user?.full_name || 'Loading...'}</div>
-              <div className="text-xs text-text-muted capitalize">{user?.role || ''}</div>
+              <div className="text-xs text-text-muted capitalize">{
+              user?.role === 'truck_owner' ? '🚛 Truck Owner' :
+              user?.role === 'fleet_manager' ? '📋 Fleet Manager' :
+              user?.role === 'admin' ? '⚙️ Admin' :
+              user?.role || ''
+            }</div>
             </div>
             <ChevronRight size={14} className="text-text-muted" />
           </Link>
