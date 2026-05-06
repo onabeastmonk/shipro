@@ -25,6 +25,10 @@ export default function JobDetailPage() {
   const [myApplication, setMyApplication] = useState<any>(null)
   const [showApproveConfirm, setShowApproveConfirm] = useState<any>(null)
   const [viewTruckDetails, setViewTruckDetails] = useState<any>(null)
+  const [myDrivers, setMyDrivers] = useState<any[]>([])
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('')
+  const [helperName, setHelperName] = useState<string>('')
+  const [helperContact, setHelperContact] = useState<string>('')
 
   useEffect(() => {
     async function load() {
@@ -45,6 +49,13 @@ export default function JobDetailPage() {
           .eq('availability', 'available')
         setUserTrucks(trucks || [])
         if (trucks && trucks.length > 0) setSelectedTruckId(trucks[0].id)
+
+        const { data: drivers } = await supabase
+          .from('truck_drivers')
+          .select('*')
+          .eq('owner_id', session.user.id)
+          .eq('status', 'active')
+        setMyDrivers(drivers || [])
       }
 
       await loadJob(session.user.id)
@@ -100,6 +111,9 @@ export default function JobDetailPage() {
         truck_id: selectedTruckId,
         driver_id: userId,
         status: 'pending',
+        selected_driver_id: selectedDriverId || null,
+        selected_helper_name: helperName || null,
+        selected_helper_contact: helperContact || null,
       })
       if (error) throw error
 
@@ -351,6 +365,26 @@ export default function JobDetailPage() {
                     </div>
                   </div>
                 )}
+                {/* Driver selection */}
+                {myDrivers.length > 0 && (
+                  <div className="mb-3">
+                    <label className="text-xs text-text-muted font-semibold uppercase mb-2 block">Select Driver for this Trip</label>
+                    <select className="form-input" value={selectedDriverId} onChange={e => setSelectedDriverId(e.target.value)}>
+                      <option value="">— Select driver —</option>
+                      {myDrivers.map((d: any) => (
+                        <option key={d.id} value={d.id}>{d.full_name} · {d.contact_number || '—'}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Helper */}
+                <div className="mb-3">
+                  <label className="text-xs text-text-muted font-semibold uppercase mb-2 block">Helper / Pahinante (Optional)</label>
+                  <input className="form-input mb-2" placeholder="Helper full name" value={helperName} onChange={e => setHelperName(e.target.value)} />
+                  <input className="form-input" placeholder="Helper contact number" value={helperContact} onChange={e => setHelperContact(e.target.value)} />
+                </div>
+
                 <button
                   onClick={handleApply}
                   disabled={applying || userTrucks.length === 0 || !selectedTruckId}

@@ -7,7 +7,7 @@ import { supabase } from '@/lib/supabase'
 import type { User } from '@/types'
 import {
   LayoutDashboard, ClipboardList, MapPin, Truck, DollarSign,
-  Bell, LogOut, X, ChevronRight, Calendar, AlertTriangle
+  Bell, LogOut, X, ChevronRight, Calendar, AlertTriangle, Users
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: '/tracking', label: 'Tracking', icon: MapPin },
   { href: '/fleet', label: 'Fleet', icon: Truck },
   { href: '/payroll', label: 'Payroll', icon: DollarSign },
+  { href: '/drivers', label: 'My Drivers', icon: Users },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
 ]
