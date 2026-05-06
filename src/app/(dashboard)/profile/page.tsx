@@ -166,7 +166,7 @@ export default function ProfilePage() {
           </div>
           <div>
             <label className="form-label">Email Address</label>
-            <input className="form-input" value={user?.email || ''} disabled className="form-input opacity-50 cursor-not-allowed" />
+           <input value={user?.email || ''} disabled className="form-input opacity-50 cursor-not-allowed" />
             <p className="text-xs text-text-muted mt-1">Email cannot be changed here.</p>
           </div>
           <div>
