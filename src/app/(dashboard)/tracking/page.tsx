@@ -255,7 +255,7 @@ export default function TrackingPage() {
                     <h2 className="font-heading text-base font-bold">{detailJob.client_name}</h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`status-badge ${getJobStatusColor(detailJob.status)}`}>{JOB_STATUS_LABELS[detailJob.status]}</span>
+                    <span className={`status-badge ${getJobStatusColor(detailJob.status as any)}`}>{((JOB_STATUS_LABELS as any)[detailJob.status])}</span>
                     <button onClick={() => setDetailJob(null)}
                       style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: '16px' }}>
                       ✕
