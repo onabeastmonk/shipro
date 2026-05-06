@@ -161,7 +161,7 @@ export default function IncidentsPage() {
               incident={incident}
               statusColor={statusColor}
               isAdmin={userRole === 'admin'}
-              onStatusChange={async (newStatus) => {
+              onStatusChange={async (newStatus: string) => {
                 await supabase.from('incident_reports').update({ status: newStatus }).eq('id', incident.id)
                 setIncidents(prev => prev.map(i => i.id === incident.id ? { ...i, status: newStatus } : i))
                 toast.success('Status updated')
