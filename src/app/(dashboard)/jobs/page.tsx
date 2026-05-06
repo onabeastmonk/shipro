@@ -290,6 +290,47 @@ function JobCard({ job, userRole, userId, onShowMap }: {
             <span className="flex-1 truncate text-right">{job.dropoff_location}</span>
           </div>
 
+          {/* Applicants alert banner - very visible for admin */}
+          {job.applicants && job.applicants.filter((a: any) => a.status === 'pending').length > 0 && (
+            <div style={{
+              background: 'linear-gradient(135deg, rgba(249,115,22,0.2), rgba(249,115,22,0.1))',
+              border: '1.5px solid #f97316',
+              borderRadius: '8px',
+              padding: '8px 12px',
+              marginBottom: '8px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '18px' }}>🙋</span>
+                <div>
+                  <div style={{ color: '#f97316', fontWeight: 800, fontSize: '14px', lineHeight: 1 }}>
+                    {job.applicants.filter((a: any) => a.status === 'pending').length} Driver{job.applicants.filter((a: any) => a.status === 'pending').length > 1 ? 's' : ''} Applied!
+                  </div>
+                  <div style={{ color: '#f97316', fontSize: '11px', opacity: 0.8, marginTop: '2px' }}>
+                    Tap to review and assign
+                  </div>
+                </div>
+              </div>
+              <div style={{
+                background: '#f97316',
+                color: '#000',
+                borderRadius: '999px',
+                width: '28px',
+                height: '28px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontWeight: 900,
+                fontSize: '14px',
+                flexShrink: 0,
+              }}>
+                {job.applicants.filter((a: any) => a.status === 'pending').length}
+              </div>
+            </div>
+          )}
+
           {/* Truck / applicants */}
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
@@ -299,9 +340,9 @@ function JobCard({ job, userRole, userId, onShowMap }: {
                   ? `🔍 ${job.required_truck_type_label}`
                   : '⏳ No truck assigned'}
             </span>
-            {job.applicants && job.applicants.length > 0 && (
-              <span style={{ color: '#f97316', fontWeight: 600 }}>
-                {job.applicants.length} applicant{job.applicants.length > 1 ? 's' : ''}
+            {job.applicants && job.applicants.filter((a: any) => a.status === 'approved').length > 0 && (
+              <span style={{ color: '#22c55e', fontWeight: 600, fontSize: '11px' }}>
+                ✓ Driver assigned
               </span>
             )}
           </div>
