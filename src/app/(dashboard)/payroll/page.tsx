@@ -5,6 +5,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { fetchPayslips, createPayslip, updatePayslipStatus } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, generatePayslipPDF, exportToCSV } from '@/lib/utils'
 import type { Payslip, PayslipForm } from '@/types'
 import { Plus, Printer, Download, ChevronLeft, X } from 'lucide-react'
@@ -211,7 +212,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
   onSave: (form: PayslipForm) => Promise<void>
 }) {
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState<any>({
+  const [form, setForm] = useState<Omit<PayslipForm, 'driver_id' | 'job_order_id'> & { driver_id: string; job_order_id: string }>({
     driver_id: '', job_order_id: '', delivery_date: '',
     pickup_location: '', dropoff_location: '', truck_type_label: '',
     base_rate: 0, additional_charges: 0, fuel_allowance: 0,
@@ -219,9 +220,10 @@ function NewPayslipModal({ userId, onClose, onSave }: {
     payment_status: 'pending', remarks: '',
   })
 
-function update(key: string, value: string | number) {
-    setForm((f: any) => ({ ...f, [key]: value }))
+  function update(key: string, value: string | number) {
+    setForm(f => ({ ...f, [key]: value }))
   }
+
   const total = form.base_rate + form.additional_charges + form.fuel_allowance + form.toll_fee + form.parking_fee - form.deductions
 
   async function handleSave() {
