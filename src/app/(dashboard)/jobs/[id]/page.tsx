@@ -24,6 +24,7 @@ export default function JobDetailPage() {
   const [applying, setApplying] = useState(false)
   const [myApplication, setMyApplication] = useState<any>(null)
   const [showApproveConfirm, setShowApproveConfirm] = useState<any>(null)
+  const [viewTruckDetails, setViewTruckDetails] = useState<any>(null)
 
   useEffect(() => {
     async function load() {
@@ -427,7 +428,7 @@ export default function JobDetailPage() {
                       <div className="text-xs text-text-muted mt-0.5">
                         📞 {applicant.driver?.contact_number || '—'}
                       </div>
-                      <div className="flex items-center gap-1 mt-1">
+                      <div className="flex items-center gap-2 mt-1.5">
                         <span className={cn(
                           'text-xs px-2 py-0.5 rounded-full border',
                           applicant.truck?.verification_status === 'approved'
@@ -436,6 +437,12 @@ export default function JobDetailPage() {
                         )}>
                           {applicant.truck?.verification_status === 'approved' ? '✓ Verified' : '⚠ Unverified'}
                         </span>
+                        <button
+                          onClick={() => setViewTruckDetails(applicant)}
+                          style={{ background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.4)', color: '#60a5fa', borderRadius: '999px', padding: '1px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          🔍 View Full Details
+                        </button>
                       </div>
                     </div>
                     <span className={cn(
@@ -578,6 +585,123 @@ export default function JobDetailPage() {
         </div>
       </div>
 
+      {/* Truck Details Popup */}
+      {viewTruckDetails && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center p-0 md:p-4">
+          <div className="bg-bg-secondary w-full md:max-w-md rounded-t-2xl md:rounded-2xl max-h-[85vh] overflow-y-auto scrollbar-hide">
+            <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1 md:hidden" />
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div>
+                <h2 className="font-heading text-base font-bold text-text-primary">🚛 Truck Details</h2>
+                <p className="text-xs text-text-muted mt-0.5">Applicant information</p>
+              </div>
+              <button
+                onClick={() => setViewTruckDetails(null)}
+                style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: '16px', color: '#a0a0a0' }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+
+              {/* Verification status banner */}
+              <div style={{
+                background: viewTruckDetails.truck?.verification_status === 'approved' ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)',
+                border: `1px solid ${viewTruckDetails.truck?.verification_status === 'approved' ? '#16532d' : '#713f12'}`,
+                borderRadius: '8px',
+                padding: '10px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}>
+                <span style={{ fontSize: '20px' }}>{viewTruckDetails.truck?.verification_status === 'approved' ? '✅' : '⚠️'}</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', color: viewTruckDetails.truck?.verification_status === 'approved' ? '#22c55e' : '#f59e0b' }}>
+                    {viewTruckDetails.truck?.verification_status === 'approved' ? 'Verified Truck' : 'Not Yet Verified'}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#a0a0a0', marginTop: '1px' }}>
+                    {viewTruckDetails.truck?.verification_status === 'approved' ? 'Documents checked and approved by admin' : 'Pending admin verification'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Owner Info */}
+              <div>
+                <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Owner Information</div>
+                <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
+                  <DetailRow label="Owner Name" value={viewTruckDetails.truck?.owner_name || '—'} />
+                  <DetailRow label="Contact Number" value={viewTruckDetails.driver?.contact_number || '—'} />
+                  <DetailRow label="Email" value={viewTruckDetails.driver?.full_name || '—'} />
+                </div>
+              </div>
+
+              {/* Truck Info */}
+              <div>
+                <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Truck Information</div>
+                <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
+                  <DetailRow label="Plate Number" value={viewTruckDetails.truck?.plate_number || '—'} highlight />
+                  <DetailRow label="Truck Type" value={viewTruckDetails.truck?.truck_type_label || '—'} />
+                  <DetailRow label="CBM Capacity" value={viewTruckDetails.truck?.cbm_capacity ? `${viewTruckDetails.truck.cbm_capacity} CBM` : '—'} highlight />
+                  <DetailRow label="Driver Name" value={viewTruckDetails.truck?.driver_name || '—'} />
+                </div>
+              </div>
+
+              {/* Job requirement comparison */}
+              {job?.required_truck_type_label && (
+                <div>
+                  <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Job Requirements Match</div>
+                  <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-text-muted">Required Truck</span>
+                      <span className="text-xs font-semibold text-text-primary">{job.required_truck_type_label}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs text-text-muted">Applicant Truck</span>
+                      <span className="text-xs font-semibold text-text-primary">{viewTruckDetails.truck?.truck_type_label}</span>
+                    </div>
+                    {job.total_cbm && (
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-text-muted">Required CBM</span>
+                          <span className="text-xs font-semibold text-text-primary">{job.total_cbm} CBM</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs text-text-muted">Truck CBM</span>
+                          <span className={`text-xs font-bold ${viewTruckDetails.truck?.cbm_capacity >= job.total_cbm ? 'text-success' : 'text-danger'}`}>
+                            {viewTruckDetails.truck?.cbm_capacity} CBM {viewTruckDetails.truck?.cbm_capacity >= job.total_cbm ? '✓ Sufficient' : '✗ Insufficient'}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              {viewTruckDetails.status === 'pending' && job?.status !== 'assigned' && (
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => { handleRejectApplicant(viewTruckDetails.id); setViewTruckDetails(null) }}
+                    className="btn btn-danger flex-1"
+                  >
+                    ✗ Reject
+                  </button>
+                  <button
+                    onClick={() => { setShowApproveConfirm(viewTruckDetails); setViewTruckDetails(null) }}
+                    className="btn btn-success flex-1"
+                  >
+                    ✓ Assign This Truck
+                  </button>
+                </div>
+              )}
+              <button onClick={() => setViewTruckDetails(null)} className="btn btn-secondary btn-full">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Approve Confirm Dialog */}
       {showApproveConfirm && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
@@ -653,6 +777,15 @@ function DetailSkeleton() {
       <div className="skeleton h-48 rounded-lg" />
       <div className="skeleton h-44 rounded-lg" />
       <div className="skeleton h-56 rounded-lg" />
+    </div>
+  )
+}
+
+function DetailRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex justify-between items-center">
+      <span className="text-xs text-text-muted">{label}</span>
+      <span className={`text-xs font-semibold ${highlight ? 'text-text-primary' : 'text-text-secondary'}`}>{value}</span>
     </div>
   )
 }
