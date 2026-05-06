@@ -59,7 +59,8 @@ export async function fetchJobOrders(filters?: {
     .select(`
       *,
       truck:trucks(id, plate_number, truck_type_label, driver_name),
-      driver:profiles!assigned_driver_id(id, full_name, contact_number)
+      driver:profiles!assigned_driver_id(id, full_name, contact_number),
+      applicants:job_applicants(id, status)
     `)
     .order('created_at', { ascending: false })
 
