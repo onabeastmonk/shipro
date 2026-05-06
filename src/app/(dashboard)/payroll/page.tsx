@@ -211,8 +211,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
   onSave: (form: PayslipForm) => Promise<void>
 }) {
   const [loading, setLoading] = useState(false)
-  const [form, setForm] = useState<any>(
- { driver_id: string; job_order_id: string }>({
+  const [form, setForm] = useState<any>({
     driver_id: '', job_order_id: '', delivery_date: '',
     pickup_location: '', dropoff_location: '', truck_type_label: '',
     base_rate: 0, additional_charges: 0, fuel_allowance: 0,
