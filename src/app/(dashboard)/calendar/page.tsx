@@ -4,16 +4,29 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
 
 interface CalendarEvent {
   id: string
   date: string
   title: string
   subtitle?: string
-  type: 'job' | 'document_expiry' | 'document_warning'
+  type: 'job_scheduled' | 'job_completed' | 'job_cancelled' | 'job_active' | 'doc_expiry' | 'doc_warning'
   color: string
+  bgColor: string
   data?: any
+}
+
+const LEGEND = [
+  { type: 'job_active', label: 'Active/Assigned Job', color: '#3b82f6', bg: 'rgba(59,130,246,0.15)' },
+  { type: 'job_scheduled', label: 'Scheduled Job', color: '#a0a0a0', bg: 'rgba(160,160,160,0.15)' },
+  { type: 'job_completed', label: 'Completed Job', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' },
+  { type: 'job_cancelled', label: 'Cancelled Job', color: '#ef4444', bg: 'rgba(239,68,68,0.15)' },
+  { type: 'doc_warning', label: 'Doc Expiring Soon', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' },
+  { type: 'doc_expiry', label: 'Doc Expired', color: '#ef4444', bg: 'rgba(239,68,68,0.2)' },
+]
+
+function getEventStyle(type: string) {
+  return LEGEND.find(l => l.type === type) || LEGEND[0]
 }
 
 export default function CalendarPage() {
@@ -32,25 +45,26 @@ export default function CalendarPage() {
 
       const allEvents: CalendarEvent[] = []
 
-      // Job order events
       for (const job of (jobsRes.data || [])) {
         if (!job.delivery_date) continue
-        const statusColors: Record<string, string> = {
-          completed: '#22c55e', cancelled: '#ef4444', in_transit: '#3b82f6',
-          assigned: '#f59e0b', delivered: '#22c55e',
-        }
+        let type: CalendarEvent['type'] = 'job_scheduled'
+        if (job.status === 'completed' || job.status === 'delivered') type = 'job_completed'
+        else if (job.status === 'cancelled') type = 'job_cancelled'
+        else if (['assigned', 'accepted', 'at_pickup', 'loaded', 'in_transit', 'arrived'].includes(job.status)) type = 'job_active'
+
+        const style = getEventStyle(type)
         allEvents.push({
           id: job.id,
           date: job.delivery_date,
-          title: `🚛 ${job.job_number}`,
+          title: `${job.job_number}`,
           subtitle: job.client_name,
-          type: 'job',
-          color: statusColors[job.status] || '#a0a0a0',
+          type,
+          color: style.color,
+          bgColor: style.bg,
           data: job,
         })
       }
 
-      // Document expiry events
       for (const doc of (docsRes.data || [])) {
         if (!doc.expiry_date) continue
         const expiry = new Date(doc.expiry_date)
@@ -58,25 +72,11 @@ export default function CalendarPage() {
         const daysUntil = Math.floor((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 
         if (daysUntil < 0) {
-          allEvents.push({
-            id: doc.id,
-            date: doc.expiry_date,
-            title: `❌ ${doc.document_type} EXPIRED`,
-            subtitle: (doc.truck as any)?.plate_number,
-            type: 'document_expiry',
-            color: '#ef4444',
-            data: doc,
-          })
+          const style = getEventStyle('doc_expiry')
+          allEvents.push({ id: doc.id, date: doc.expiry_date, title: `${doc.document_type} EXPIRED`, subtitle: (doc.truck as any)?.plate_number, type: 'doc_expiry', color: style.color, bgColor: style.bg, data: doc })
         } else if (daysUntil <= 30) {
-          allEvents.push({
-            id: doc.id,
-            date: doc.expiry_date,
-            title: `⚠️ ${doc.document_type} expiring`,
-            subtitle: `${(doc.truck as any)?.plate_number} · ${daysUntil}d left`,
-            type: 'document_warning',
-            color: '#f59e0b',
-            data: doc,
-          })
+          const style = getEventStyle('doc_warning')
+          allEvents.push({ id: doc.id, date: doc.expiry_date, title: `${doc.document_type} expiring`, subtitle: `${(doc.truck as any)?.plate_number} · ${daysUntil}d left`, type: 'doc_warning', color: style.color, bgColor: style.bg, data: doc })
         }
       }
 
@@ -86,13 +86,11 @@ export default function CalendarPage() {
     load()
   }, [])
 
-  // Calendar helpers
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const monthName = currentDate.toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
-
   const today = new Date().toISOString().split('T')[0]
 
   function getDateStr(day: number) {
@@ -104,12 +102,7 @@ export default function CalendarPage() {
   }
 
   const selectedDateEvents = selectedDate ? events.filter(e => e.date === selectedDate) : []
-
-  // Upcoming events (next 30 days)
-  const upcomingEvents = events
-    .filter(e => e.date >= today)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 10)
+  const upcomingEvents = events.filter(e => e.date >= today).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 15)
 
   return (
     <div className="max-w-2xl mx-auto p-4">
@@ -118,76 +111,87 @@ export default function CalendarPage() {
         <p className="text-text-muted text-sm mt-0.5">Schedules, trips & document expiry</p>
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-3 mb-4 flex-wrap">
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <div className="w-3 h-3 rounded-full bg-info" />Job Orders
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <div className="w-3 h-3 rounded-full bg-warning" />Doc Expiring
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <div className="w-3 h-3 rounded-full bg-danger" />Doc Expired
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-text-muted">
-          <div className="w-3 h-3 rounded-full bg-success" />Completed
+      {/* Colorized Legend */}
+      <div className="bg-bg-secondary border border-border rounded-lg p-3 mb-4">
+        <div className="text-xs font-bold text-text-muted uppercase tracking-wide mb-2">Legend</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {LEGEND.map(l => (
+            <div key={l.type} className="flex items-center gap-2">
+              <div style={{ width: '12px', height: '12px', borderRadius: '3px', background: l.color, flexShrink: 0 }} />
+              <span style={{ fontSize: '11px', color: l.color, fontWeight: 600 }}>{l.label}</span>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Calendar */}
       <div className="bg-bg-secondary border border-border rounded-lg p-4 mb-4">
-        {/* Header */}
+        {/* Month navigation */}
         <div className="flex items-center justify-between mb-4">
           <button onClick={() => setCurrentDate(new Date(year, month - 1, 1))}
             className="p-2 rounded-md hover:bg-bg-tertiary transition-colors">
-            <ChevronLeft size={18} className="text-text-muted" />
+            <ChevronLeft size={20} className="text-text-muted" />
           </button>
-          <h2 className="font-heading text-base font-semibold text-text-primary">{monthName}</h2>
+          <h2 className="font-heading text-lg font-bold text-text-primary">{monthName}</h2>
           <button onClick={() => setCurrentDate(new Date(year, month + 1, 1))}
             className="p-2 rounded-md hover:bg-bg-tertiary transition-colors">
-            <ChevronRight size={18} className="text-text-muted" />
+            <ChevronRight size={20} className="text-text-muted" />
           </button>
         </div>
 
         {/* Day headers */}
-        <div className="grid grid-cols-7 mb-2">
-          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-            <div key={d} className="text-center text-xs text-text-muted font-semibold py-1">{d}</div>
+        <div className="grid grid-cols-7 mb-1">
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+            <div key={d} className="text-center text-xs text-text-muted font-bold py-1">{d}</div>
           ))}
         </div>
 
-        {/* Days grid */}
-        <div className="grid grid-cols-7 gap-0.5">
-          {Array(firstDay).fill(null).map((_, i) => <div key={`empty-${i}`} />)}
+        {/* Days */}
+        <div className="grid grid-cols-7 gap-1">
+          {Array(firstDay).fill(null).map((_, i) => <div key={`e${i}`} className="h-16" />)}
           {Array(daysInMonth).fill(null).map((_, i) => {
             const day = i + 1
             const dateStr = getDateStr(day)
             const dayEvents = getEventsForDate(day)
             const isToday = dateStr === today
             const isSelected = dateStr === selectedDate
+
             return (
-              <button
+              <div
                 key={day}
                 onClick={() => setSelectedDate(isSelected ? null : dateStr)}
-                className={cn(
-                  'relative flex flex-col items-center justify-start p-1 rounded-md min-h-[48px] transition-all',
-                  isSelected ? 'bg-brand text-bg-primary' :
-                  isToday ? 'bg-bg-elevated border border-brand' :
-                  'hover:bg-bg-tertiary'
-                )}
+                className="h-16 rounded-lg cursor-pointer flex flex-col p-1 transition-all"
+                style={{
+                  background: isSelected ? 'rgba(255,255,255,0.15)' : isToday ? 'rgba(255,255,255,0.05)' : 'transparent',
+                  border: isSelected ? '1.5px solid #fff' : isToday ? '1.5px solid rgba(255,255,255,0.3)' : '1px solid transparent',
+                }}
               >
-                <span className={cn('text-xs font-semibold', isSelected ? 'text-bg-primary' : isToday ? 'text-brand' : 'text-text-secondary')}>
+                <span className="text-xs font-bold mb-0.5" style={{ color: isToday ? '#fff' : isSelected ? '#fff' : '#a0a0a0' }}>
                   {day}
                 </span>
-                <div className="flex flex-wrap justify-center gap-0.5 mt-0.5">
-                  {dayEvents.slice(0, 3).map((ev, idx) => (
-                    <div key={idx} style={{ width: '5px', height: '5px', borderRadius: '50%', background: isSelected ? '#000' : ev.color, flexShrink: 0 }} />
+                <div className="flex flex-col gap-0.5 overflow-hidden">
+                  {dayEvents.slice(0, 2).map((ev, idx) => (
+                    <div key={idx} style={{
+                      background: ev.bgColor,
+                      borderLeft: `2px solid ${ev.color}`,
+                      borderRadius: '2px',
+                      padding: '1px 3px',
+                      fontSize: '9px',
+                      fontWeight: 600,
+                      color: ev.color,
+                      lineHeight: '12px',
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {ev.title}
+                    </div>
                   ))}
-                  {dayEvents.length > 3 && (
-                    <span style={{ fontSize: '8px', color: isSelected ? '#000' : '#a0a0a0', lineHeight: '5px' }}>+{dayEvents.length - 3}</span>
+                  {dayEvents.length > 2 && (
+                    <div style={{ fontSize: '9px', color: '#666', paddingLeft: '3px' }}>+{dayEvents.length - 2} more</div>
                   )}
                 </div>
-              </button>
+              </div>
             )
           })}
         </div>
@@ -195,23 +199,24 @@ export default function CalendarPage() {
 
       {/* Selected date events */}
       {selectedDate && (
-        <div className="mb-4">
-          <h3 className="font-heading text-sm font-semibold text-text-primary mb-2">
+        <div className="mb-5">
+          <h3 className="font-heading text-sm font-bold text-text-primary mb-2">
             {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
           </h3>
           {selectedDateEvents.length === 0 ? (
-            <div className="text-center py-6 text-text-muted text-sm">No events on this date</div>
+            <div className="text-center py-4 text-text-muted text-sm">No events on this date</div>
           ) : (
             <div className="space-y-2">
               {selectedDateEvents.map(ev => (
                 <div key={ev.id} onClick={() => setSelectedEvent(ev)}
-                  className="bg-bg-secondary border border-border rounded-lg p-3 cursor-pointer hover:border-border-secondary transition-colors flex items-start gap-3">
-                  <div style={{ width: '4px', height: '100%', minHeight: '36px', borderRadius: '2px', background: ev.color, flexShrink: 0 }} />
+                  className="rounded-lg p-3 cursor-pointer transition-all hover:opacity-90 flex items-start gap-3"
+                  style={{ background: ev.bgColor, border: `1px solid ${ev.color}` }}>
+                  <div style={{ width: '4px', alignSelf: 'stretch', borderRadius: '2px', background: ev.color, flexShrink: 0 }} />
                   <div className="flex-1">
-                    <div className="text-sm font-semibold text-text-primary">{ev.title}</div>
-                    {ev.subtitle && <div className="text-xs text-text-muted mt-0.5">{ev.subtitle}</div>}
+                    <div className="text-sm font-bold" style={{ color: ev.color }}>{ev.title}</div>
+                    {ev.subtitle && <div className="text-xs mt-0.5" style={{ color: ev.color, opacity: 0.8 }}>{ev.subtitle}</div>}
                   </div>
-                  <span className="text-xs text-text-muted">›</span>
+                  <span style={{ color: ev.color, fontSize: '16px' }}>›</span>
                 </div>
               ))}
             </div>
@@ -219,41 +224,40 @@ export default function CalendarPage() {
         </div>
       )}
 
-      {/* Upcoming events */}
+      {/* Upcoming */}
       <div>
-        <h3 className="font-heading text-sm font-semibold text-text-primary mb-3">📅 Upcoming (Next 30 Days)</h3>
-        {loading ? (
-          Array(3).fill(0).map((_, i) => <div key={i} className="skeleton h-14 rounded-lg mb-2" />)
-        ) : upcomingEvents.length === 0 ? (
+        <h3 className="font-heading text-sm font-bold text-text-primary mb-3">📅 Upcoming Events</h3>
+        {loading ? Array(4).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-14 rounded-lg mb-2" />) :
+         upcomingEvents.length === 0 ? (
           <div className="text-center py-6 text-text-muted text-sm">No upcoming events</div>
-        ) : (
+         ) : (
           <div className="space-y-2">
             {upcomingEvents.map(ev => (
               <div key={ev.id} onClick={() => setSelectedEvent(ev)}
-                className="bg-bg-secondary border border-border rounded-lg p-3 cursor-pointer hover:border-border-secondary transition-colors flex items-center gap-3">
-                <div style={{ width: '4px', alignSelf: 'stretch', borderRadius: '2px', background: ev.color, flexShrink: 0 }} />
+                className="rounded-lg p-3 cursor-pointer flex items-center gap-3 transition-all hover:opacity-90"
+                style={{ background: ev.bgColor, border: `1px solid ${ev.color}` }}>
+                <div style={{ width: '4px', alignSelf: 'stretch', minHeight: '36px', borderRadius: '2px', background: ev.color, flexShrink: 0 }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-text-primary truncate">{ev.title}</div>
-                  {ev.subtitle && <div className="text-xs text-text-muted">{ev.subtitle}</div>}
+                  <div className="text-sm font-bold truncate" style={{ color: ev.color }}>{ev.title}</div>
+                  {ev.subtitle && <div className="text-xs" style={{ color: ev.color, opacity: 0.8 }}>{ev.subtitle}</div>}
                 </div>
-                <div className="text-right flex-shrink-0">
-                  <div className="text-xs font-semibold text-text-secondary">
-                    {new Date(ev.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
-                  </div>
+                <div style={{ color: ev.color, fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>
+                  {new Date(ev.date + 'T00:00:00').toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}
                 </div>
               </div>
             ))}
           </div>
-        )}
+         )}
       </div>
 
       {/* Event detail popup */}
       {selectedEvent && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center p-0 md:p-4">
-          <div className="bg-bg-secondary w-full md:max-w-md rounded-t-2xl md:rounded-2xl">
+          <div className="bg-bg-secondary w-full md:max-w-md rounded-t-2xl md:rounded-2xl"
+            style={{ borderTop: `3px solid ${selectedEvent.color}` }}>
             <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1 md:hidden" />
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-              <h2 className="font-heading text-base font-bold">{selectedEvent.title}</h2>
+              <h2 className="font-heading text-base font-bold" style={{ color: selectedEvent.color }}>{selectedEvent.title}</h2>
               <button onClick={() => setSelectedEvent(null)}
                 style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: '16px' }}>
                 ✕
@@ -264,22 +268,36 @@ export default function CalendarPage() {
                 {new Date(selectedEvent.date + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
               </div>
 
-              {selectedEvent.type === 'job' && selectedEvent.data && (
-                <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Client</span><span className="text-xs font-semibold">{selectedEvent.data.client_name}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Pickup</span><span className="text-xs font-semibold text-right max-w-[60%]">{selectedEvent.data.pickup_location}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Drop-off</span><span className="text-xs font-semibold text-right max-w-[60%]">{selectedEvent.data.dropoff_location}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Rate</span><span className="text-xs font-semibold">{selectedEvent.data.total_rate ? `₱${Number(selectedEvent.data.total_rate).toLocaleString()}` : '—'}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Status</span><span className="text-xs font-semibold capitalize">{selectedEvent.data.status?.replace(/_/g, ' ')}</span></div>
+              {selectedEvent.data && selectedEvent.type.startsWith('job') && (
+                <div className="rounded-lg p-3 space-y-2" style={{ background: selectedEvent.bgColor, border: `1px solid ${selectedEvent.color}` }}>
+                  {[
+                    ['Client', selectedEvent.data.client_name],
+                    ['Pickup', selectedEvent.data.pickup_location],
+                    ['Drop-off', selectedEvent.data.dropoff_location],
+                    ['Rate', selectedEvent.data.total_rate ? `₱${Number(selectedEvent.data.total_rate).toLocaleString()}` : '—'],
+                    ['Status', selectedEvent.data.status?.replace(/_/g, ' ')],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between text-xs">
+                      <span className="text-text-muted">{k}</span>
+                      <span className="font-semibold text-right max-w-[60%] truncate" style={{ color: selectedEvent.color }}>{v}</span>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {(selectedEvent.type === 'document_expiry' || selectedEvent.type === 'document_warning') && selectedEvent.data && (
-                <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Document</span><span className="text-xs font-semibold">{selectedEvent.data.document_type}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Truck</span><span className="text-xs font-semibold">{selectedEvent.data.truck?.plate_number}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Owner</span><span className="text-xs font-semibold">{selectedEvent.data.truck?.owner_name}</span></div>
-                  <div className="flex justify-between"><span className="text-xs text-text-muted">Expiry</span><span className="text-xs font-semibold text-danger">{formatDate(selectedEvent.data.expiry_date)}</span></div>
+              {selectedEvent.data && selectedEvent.type.startsWith('doc') && (
+                <div className="rounded-lg p-3 space-y-2" style={{ background: selectedEvent.bgColor, border: `1px solid ${selectedEvent.color}` }}>
+                  {[
+                    ['Document', selectedEvent.data.document_type],
+                    ['Truck', selectedEvent.data.truck?.plate_number],
+                    ['Owner', selectedEvent.data.truck?.owner_name],
+                    ['Expiry', formatDate(selectedEvent.data.expiry_date)],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex justify-between text-xs">
+                      <span className="text-text-muted">{k}</span>
+                      <span className="font-semibold" style={{ color: selectedEvent.color }}>{v}</span>
+                    </div>
+                  ))}
                 </div>
               )}
 

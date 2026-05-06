@@ -1,13 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { fetchPayslips, createPayslip, updatePayslipStatus } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, generatePayslipPDF, exportToCSV } from '@/lib/utils'
 import type { Payslip, PayslipForm } from '@/types'
-import { Plus, Printer, Download, ChevronLeft, X } from 'lucide-react'
+import { Plus, Printer, Download, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export default function PayrollPage() {
@@ -25,13 +23,15 @@ export default function PayrollPage() {
   async function loadPayslips() {
     setLoading(true)
     try {
-      const data = await fetchPayslips()
-      setPayslips(data)
+      const { data, error } = await supabase
+        .from('payslips')
+        .select('*, driver:profiles!driver_id(full_name, email), job_order:job_orders(job_number)')
+        .order('created_at', { ascending: false })
+      if (!error) setPayslips((data || []) as any)
     } catch { } finally { setLoading(false) }
   }
 
   const filtered = filter === 'all' ? payslips : payslips.filter(p => p.payment_status === filter)
-
   const totalPaid = payslips.filter(p => p.payment_status === 'paid').reduce((s, p) => s + p.total_amount, 0)
   const totalPending = payslips.filter(p => p.payment_status === 'pending').reduce((s, p) => s + p.total_amount, 0)
 
@@ -67,63 +67,55 @@ export default function PayrollPage() {
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 mb-5">
-        <div className="bg-bg-secondary border border-border-l-success border-l-2 border-l-success rounded-md p-3.5">
+        <div className="bg-bg-secondary rounded-md p-3.5" style={{ borderLeft: '2px solid #22c55e', border: '0.5px solid #2a2a2a', borderLeftWidth: '2px', borderLeftColor: '#22c55e' }}>
           <div className="text-xs text-text-muted uppercase tracking-wide mb-1.5">Total Paid</div>
           <div className="font-heading text-xl font-bold text-success">{formatCurrency(totalPaid)}</div>
-          <div className="text-xs text-text-muted mt-1">This month</div>
         </div>
-        <div className="bg-bg-secondary border-l-2 border-l-warning rounded-md p-3.5" style={{border:'0.5px solid #2a2a2a', borderLeft:'2px solid #f59e0b'}}>
+        <div className="bg-bg-secondary rounded-md p-3.5" style={{ borderLeft: '2px solid #f59e0b', border: '0.5px solid #2a2a2a', borderLeftWidth: '2px', borderLeftColor: '#f59e0b' }}>
           <div className="text-xs text-text-muted uppercase tracking-wide mb-1.5">Pending</div>
           <div className="font-heading text-xl font-bold text-warning">{formatCurrency(totalPending)}</div>
-          <div className="text-xs text-text-muted mt-1">For processing</div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="flex gap-2 mb-4">
         {['all', 'pending', 'processing', 'paid'].map(s => (
-          <button
-            key={s}
-            onClick={() => setFilter(s)}
-            className={cn(
-              'px-3 py-1.5 rounded-full text-xs font-semibold border capitalize transition-all',
-              filter === s ? 'bg-brand text-bg-primary border-brand' : 'bg-bg-secondary border-border text-text-secondary'
-            )}
-          >
+          <button key={s} onClick={() => setFilter(s)}
+            className={cn('px-3 py-1.5 rounded-full text-xs font-semibold border capitalize transition-all',
+              filter === s ? 'bg-brand text-bg-primary border-brand' : 'bg-bg-secondary border-border text-text-secondary')}>
             {s}
           </button>
         ))}
       </div>
 
       {/* List */}
-      {loading ? (
-        Array(3).fill(0).map((_, i) => <div key={i} className="skeleton h-28 rounded-lg mb-3" />)
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-12">
-          <div className="text-4xl mb-3">💰</div>
-          <p className="text-text-secondary font-medium">No payslips found</p>
-        </div>
-      ) : (
+      {loading ? Array(3).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-28 rounded-lg mb-3" />) :
+       filtered.length === 0 ? (
+        <div className="text-center py-12"><div className="text-4xl mb-3">💰</div><p className="text-text-secondary font-medium">No payslips found</p></div>
+       ) : (
         <div className="space-y-3">
           {filtered.map(p => (
             <PayslipCard key={p.id} payslip={p} onStatusChange={async (status, datePaid) => {
-              if (!userId) return
-              await updatePayslipStatus(p.id, status, datePaid, userId)
+              await supabase.from('payslips').update({ payment_status: status, date_paid: datePaid }).eq('id', p.id)
               toast.success('Status updated')
               loadPayslips()
             }} />
           ))}
         </div>
-      )}
+       )}
 
-      {/* New Payslip Modal */}
-      {showNewModal && (
+      {showNewModal && userId && (
         <NewPayslipModal
-          userId={userId!}
+          userId={userId}
           onClose={() => setShowNewModal(false)}
-          onSave={async (form) => {
-            if (!userId) return
-            await createPayslip(form, userId)
+          onSave={async (form: any) => {
+            const total = (form.base_rate || 0) + (form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0) - (form.deductions || 0)
+            const { error } = await supabase.from('payslips').insert({
+              ...form,
+              total_amount: Math.max(0, total),
+              created_by: userId,
+            })
+            if (error) throw error
             toast.success('Payslip created!')
             setShowNewModal(false)
             loadPayslips()
@@ -134,18 +126,14 @@ export default function PayrollPage() {
   )
 }
 
-function PayslipCard({ payslip, onStatusChange }: {
-  payslip: Payslip
-  onStatusChange: (status: string, datePaid?: string) => void
-}) {
+function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusChange: (status: string, datePaid?: string) => void }) {
   const driverName = (payslip.driver as any)?.full_name || 'Unknown Driver'
-  const jobNum = (payslip.job_order as any)?.job_number || payslip.job_order_id
-
+  const jobNum = (payslip.job_order as any)?.job_number || '—'
   const statusColor = {
     paid: 'bg-success-bg text-success border-success-border',
     processing: 'bg-info-bg text-info border-info-border',
     pending: 'bg-warning-bg text-warning border-warning-border',
-  }[payslip.payment_status]
+  }[payslip.payment_status] || 'bg-bg-tertiary text-text-muted border-border'
 
   async function handlePrint() {
     await generatePayslipPDF({
@@ -174,31 +162,20 @@ function PayslipCard({ payslip, onStatusChange }: {
         <div>
           <div className="text-xs text-text-muted font-mono">{payslip.payslip_number}</div>
           <div className="font-heading text-sm font-semibold mt-0.5">{driverName}</div>
-          <div className="text-xs text-text-muted mt-0.5">{jobNum}</div>
+          <div className="text-xs text-text-muted mt-0.5">{jobNum} · {formatDate(payslip.delivery_date)}</div>
         </div>
         <span className={`status-badge ${statusColor}`}>{payslip.payment_status}</span>
       </div>
-
       <div className="font-heading text-2xl font-bold my-2">{formatCurrency(payslip.total_amount)}</div>
-
-      <div className="text-xs text-text-muted mb-3">{formatDate(payslip.delivery_date)}</div>
-
       <div className="flex gap-2">
         <button onClick={handlePrint} className="btn btn-sm btn-outline flex items-center gap-1.5 flex-1">
           <Printer size={12} /> Print PDF
         </button>
         {payslip.payment_status === 'pending' && (
-          <button onClick={() => onStatusChange('processing')} className="btn btn-sm btn-secondary flex-1">
-            Process
-          </button>
+          <button onClick={() => onStatusChange('processing')} className="btn btn-sm btn-secondary flex-1">Process</button>
         )}
         {payslip.payment_status === 'processing' && (
-          <button
-            onClick={() => onStatusChange('paid', new Date().toISOString().split('T')[0])}
-            className="btn btn-sm btn-success flex-1"
-          >
-            Mark Paid
-          </button>
+          <button onClick={() => onStatusChange('paid', new Date().toISOString().split('T')[0])} className="btn btn-sm btn-success flex-1">Mark Paid</button>
         )}
       </div>
     </div>
@@ -208,9 +185,9 @@ function PayslipCard({ payslip, onStatusChange }: {
 function NewPayslipModal({ userId, onClose, onSave }: {
   userId: string
   onClose: () => void
-  onSave: (form: PayslipForm) => Promise<void>
+  onSave: (form: any) => Promise<void>
 }) {
-  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [completedJobs, setCompletedJobs] = useState<any[]>([])
   const [form, setForm] = useState<any>({
     driver_id: '', job_order_id: '', delivery_date: '',
@@ -233,7 +210,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
     setForm((f: any) => ({ ...f, [key]: value }))
   }
 
-  async function handleJobSelect(jobId: string) {
+  function handleJobSelect(jobId: string) {
     update('job_order_id', jobId)
     if (!jobId) return
     const job = completedJobs.find(j => j.id === jobId)
@@ -241,10 +218,10 @@ function NewPayslipModal({ userId, onClose, onSave }: {
       update('delivery_date', job.delivery_date || '')
       update('pickup_location', job.pickup_location || '')
       update('dropoff_location', job.dropoff_location || '')
-      update('truck_type_label', job.truck?.truck_type_label || '')
+      update('truck_type_label', (job.truck as any)?.truck_type_label || '')
       update('driver_id', job.assigned_driver_id || '')
       update('base_rate', job.base_rate || 0)
-      const itemCount = job.shipment_items?.reduce((s: number, i: any) => s + (i.quantity || 1), 0) || 0
+      const itemCount = (job.shipment_items || []).reduce((s: number, i: any) => s + (i.quantity || 1), 0)
       update('items_count', itemCount)
     }
   }
@@ -253,29 +230,27 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
   async function handleSave() {
     if (!form.job_order_id) { toast.error('Please select a completed job order'); return }
-    if (!form.delivery_date || !form.pickup_location || !form.dropoff_location) {
-      toast.error('Fill in required fields')
-      return
-    }
-    setLoading(true)
+    if (!form.pickup_location || !form.dropoff_location) { toast.error('Job details missing'); return }
+    setSaving(true)
     try {
-      await onSave(form as PayslipForm)
+      await onSave(form)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save payslip')
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-end">
-      <div className="bg-bg-secondary w-full rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide" style={{maxWidth:'480px',margin:'0 auto'}}>
+      <div className="bg-bg-secondary w-full rounded-t-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
         <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1" />
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border sticky top-0 bg-bg-secondary z-10">
           <h2 className="font-heading text-base font-semibold">New Payslip</h2>
           <button onClick={onClose}><X size={18} className="text-text-muted" /></button>
         </div>
         <div className="p-4 space-y-4">
 
-          {/* Step 1: Select completed job */}
           <div>
             <label className="form-label">Select Completed Job Order *</label>
             {completedJobs.length === 0 ? (
@@ -294,15 +269,14 @@ function NewPayslipModal({ userId, onClose, onSave }: {
             )}
           </div>
 
-          {/* Auto-filled info from job */}
           {form.job_order_id && (
-            <div className="bg-bg-tertiary border border-border rounded-lg p-3 space-y-1.5 text-xs">
-              <div className="text-text-muted font-semibold uppercase tracking-wide mb-2">Auto-filled from Job Order</div>
-              <div className="flex justify-between"><span className="text-text-muted">Delivery Date</span><span className="text-text-primary font-medium">{form.delivery_date}</span></div>
-              <div className="flex justify-between"><span className="text-text-muted">Pickup</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.pickup_location}</span></div>
-              <div className="flex justify-between"><span className="text-text-muted">Drop-off</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.dropoff_location}</span></div>
-              <div className="flex justify-between"><span className="text-text-muted">Truck Type</span><span className="text-text-primary font-medium">{form.truck_type_label || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-text-muted">Items Delivered</span><span className="text-text-primary font-bold">{form.items_count} items</span></div>
+            <div className="bg-bg-tertiary border border-border rounded-lg p-3 space-y-1.5">
+              <div className="text-xs text-text-muted font-bold uppercase tracking-wide mb-2">Job Details</div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Date</span><span className="text-text-primary font-medium">{form.delivery_date}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">From</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.pickup_location}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">To</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.dropoff_location}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Truck</span><span className="text-text-primary font-medium">{form.truck_type_label || '—'}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Items Delivered</span><span className="font-bold" style={{ color: '#60a5fa' }}>{form.items_count} items</span></div>
             </div>
           )}
 
@@ -321,7 +295,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
               <div key={key}>
                 <label className="form-label">{label}</label>
                 <input className="form-input" type="number" step="0.01" placeholder="0.00"
-                  value={(form as any)[key] || ''}
+                  value={form[key] || ''}
                   onChange={e => update(key, parseFloat(e.target.value) || 0)} />
               </div>
             ))}
@@ -348,8 +322,12 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
           <div className="flex gap-3 pb-6">
             <button onClick={onClose} className="btn btn-secondary flex-1">Cancel</button>
-            <button onClick={handleSave} disabled={loading || !form.job_order_id} className="btn btn-primary flex-1">
-              {loading ? 'Saving...' : 'Save Payslip'}
+            <button
+              onClick={handleSave}
+              disabled={saving || !form.job_order_id}
+              className="btn btn-primary flex-1"
+            >
+              {saving ? 'Saving...' : 'Save Payslip'}
             </button>
           </div>
         </div>
