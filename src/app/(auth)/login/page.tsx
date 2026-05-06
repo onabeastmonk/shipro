@@ -8,10 +8,10 @@ import { signIn } from '@/lib/auth'
 import type { UserRole } from '@/types'
 
 const ROLES: { value: UserRole; label: string; icon: string; desc: string }[] = [
-  { value: 'admin', label: 'Fleet Manager', icon: '🏢', desc: 'Full system access' },
-  { value: 'driver', label: 'Driver / Trucker', icon: '🚛', desc: 'Jobs & deliveries' },
-  { value: 'warehouse', label: 'Warehouse', icon: '📦', desc: 'Dispatch & orders' },
-  { value: 'client', label: 'Client', icon: '👁️', desc: 'View tracking' },
+  { value: 'admin', label: 'Admin', icon: '⚙️', desc: 'Full system access' },
+{ value: 'fleet_manager', label: 'Fleet Manager', icon: '🏢', desc: 'Manage fleet & jobs' },
+{ value: 'truck_owner', label: 'Truck Owner', icon: '🚛', desc: 'Register trucks & apply for jobs' },
+{ value: 'client', label: 'Client', icon: '👁️', desc: 'View tracking' },
 ]
 
 export default function LoginPage() {
