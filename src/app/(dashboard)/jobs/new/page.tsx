@@ -80,11 +80,19 @@ export default function NewJobPage() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
+      // Auto-calculate total CBM from items if not manually set
+      const computedCBM = totalCBM > 0 ? totalCBM : (form.total_cbm ? parseFloat(form.total_cbm) : 0)
+      const computedRate = form.pricing_mode === 'per_cbm' && form.rate_per_cbm
+        ? parseFloat(form.rate_per_cbm) * computedCBM
+        : form.base_rate ? parseFloat(form.base_rate) : 0
+
       const jobData = {
         ...form,
-        total_cbm: form.total_cbm ? parseFloat(form.total_cbm) : undefined,
+        total_cbm: computedCBM || undefined,
         estimated_weight_kg: form.estimated_weight_kg ? parseFloat(form.estimated_weight_kg) : undefined,
-        base_rate: form.base_rate ? parseFloat(form.base_rate) : undefined,
+        base_rate: form.pricing_mode !== 'per_cbm' && form.base_rate ? parseFloat(form.base_rate) : undefined,
+        rate_per_cbm: form.pricing_mode === 'per_cbm' && form.rate_per_cbm ? parseFloat(form.rate_per_cbm) : undefined,
+        total_rate: computedRate || undefined,
         other_charges: form.other_charges ? parseFloat(form.other_charges) : undefined,
         required_truck_type: (form.required_truck_type || undefined) as TruckType | undefined,
         required_truck_type_label: form.required_truck_type ? TRUCK_TYPE_LABELS[form.required_truck_type as TruckType] : undefined,
