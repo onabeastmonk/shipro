@@ -277,8 +277,8 @@ function JobCard({ job, userRole, userId, onShowMap }: {
                     const est = j.rate_per_cbm * (j.total_cbm || 0)
                     return (
                       <div className="text-right">
-                        <div>{`₱${Number(j.rate_per_cbm).toLocaleString()}/CBM`}</div>
-                        {j.total_cbm > 0 && <div className="text-xs text-text-muted">Est. {formatCurrency(est)}</div>}
+                        {j.total_cbm > 0 && <div className="font-heading text-lg font-bold text-text-primary">{formatCurrency(est)}</div>}
+                        <div className="text-xs text-text-muted">{`₱${Number(j.rate_per_cbm).toLocaleString()}/CBM`}</div>
                       </div>
                     )
                   }
