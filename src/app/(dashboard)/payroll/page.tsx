@@ -222,7 +222,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
   function handleJobSelect(jobId: string) {
     update('job_order_id', jobId)
-    if (!jobId) { setSelectedJob(null); return }
+    if (!jobId) return
     const job = completedJobs.find(j => j.id === jobId)
     if (job) {
       update('delivery_date', job.delivery_date || '')
