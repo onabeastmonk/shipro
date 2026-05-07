@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
@@ -14,7 +14,6 @@ const TRUCK_TYPES = Object.entries(TRUCK_TYPE_LABELS) as [TruckType, string][]
 export default function NewJobPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [warehouses, setWarehouses] = useState<any[]>([])
   const [items, setItems] = useState<ShipmentItemForm[]>([])
   const [form, setForm] = useState({
     pickup_location: '',
@@ -34,7 +33,17 @@ export default function NewJobPage() {
     other_charges: '',
     status: 'draft' as const,
     remarks: '',
+    origin_warehouse_id: '',
+    destination_warehouse_id: '',
   })
+  const [warehouses, setWarehouses] = useState<any[]>([])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) router.push('/login')
+    })
+    supabase.from('warehouses').select('id, name, address').eq('status', 'active').then(({ data }) => setWarehouses(data || []))
+  }, [router])
 
   function update(key: string, value: string) {
     setForm(f => ({ ...f, [key]: value }))
