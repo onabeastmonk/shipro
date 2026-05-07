@@ -238,6 +238,14 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
   const total = (form.base_rate || 0) + (form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0) - (form.deductions || 0)
 
+  // Computed values
+  const basePay = pricingMode === 'per_cbm'
+    ? (form.rate_per_cbm || 0) * (form.actual_cbm || 0)
+    : (form.base_rate || 0)
+  const cbmPercent = form.target_cbm > 0 ? Math.round((form.actual_cbm / form.target_cbm) * 100) : 100
+  const cbmShortfall = form.target_cbm > 0 ? Math.max(0, form.target_cbm - form.actual_cbm) : 0
+  const total = basePay + (form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0) - (form.deductions || 0)
+
   async function handleSave() {
     if (!form.job_order_id) { toast.error('Please select a completed job order'); return }
     if (!form.pickup_location || !form.dropoff_location) { toast.error('Job details missing'); return }
