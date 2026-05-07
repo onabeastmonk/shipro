@@ -222,7 +222,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 
   function handleJobSelect(jobId: string) {
     update('job_order_id', jobId)
-    if (!jobId) return
+    if (!jobId) { setSelectedJob(null); return }
     const job = completedJobs.find(j => j.id === jobId)
     if (job) {
       update('delivery_date', job.delivery_date || '')
@@ -279,7 +279,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
             )}
           </div>
 
-          {form.job_order_id && selectedJob && (
+          {form.job_order_id && form.pickup_location && (
             <div className="bg-bg-tertiary border border-border rounded-lg p-3 space-y-1.5">
               <div className="text-xs text-text-muted font-bold uppercase tracking-wide mb-2">Job Details</div>
               <div className="flex justify-between text-xs"><span className="text-text-muted">Date</span><span className="text-text-primary font-medium">{form.delivery_date}</span></div>
