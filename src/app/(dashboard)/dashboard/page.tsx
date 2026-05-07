@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { fetchDashboardStats, fetchJobOrders, fetchActivityLogs } from '@/lib/api'
+import { fetchDashboardStats, fetchActivityLogs } from '@/lib/api'
+import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatRelative, getJobStatusColor } from '@/lib/utils'
 import type { DashboardStats, JobOrder } from '@/types'
 import { JOB_STATUS_LABELS } from '@/types'
@@ -17,14 +18,19 @@ export default function DashboardPage() {
   useEffect(() => {
     async function load() {
       try {
-        const [s, jobs, logs] = await Promise.all([
+        const [s, logs] = await Promise.all([
           fetchDashboardStats(),
-          fetchJobOrders({ limit: 5 }),
           fetchActivityLogs(8),
         ])
         setStats(s)
-        setRecentJobs(jobs)
         setActivities(logs)
+
+        const { data: jobsData } = await supabase
+          .from('job_orders')
+          .select('*, truck:trucks(id, plate_number, truck_type_label, driver_name, owner_name, contact_number, owner_id), driver:profiles!assigned_driver_id(id, full_name, contact_number)')
+          .order('created_at', { ascending: false })
+          .limit(5)
+        setRecentJobs((jobsData || []) as any)
       } catch (err) {
         console.error(err)
       } finally {
@@ -159,35 +165,91 @@ export default function DashboardPage() {
           <Link href="/jobs" className="text-xs text-text-muted">See all</Link>
         </div>
         <div className="space-y-2">
-          {recentJobs.map(job => (
-            <Link key={job.id} href={`/jobs/${job.id}`}>
-              <div className="bg-bg-secondary border border-border rounded-lg p-3.5 hover:border-border-secondary transition-colors">
+          {recentJobs.map((job: any) => (
+            <div key={job.id} className="bg-bg-secondary border border-border rounded-lg p-3.5">
+              <Link href={`/jobs/${job.id}`}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <div className="text-xs text-text-muted font-semibold tracking-wide">{job.job_number}</div>
                     <div className="font-heading text-sm font-semibold text-text-primary mt-0.5">{job.client_name}</div>
+                    <div className="text-xs text-text-muted mt-0.5" style={{ color: '#f97316' }}>
+                      📅 {job.delivery_date ? new Date(job.delivery_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                    </div>
                   </div>
                   <span className={`status-badge ${getJobStatusColor(job.status)}`}>
                     {JOB_STATUS_LABELS[job.status]}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-text-muted">
+                <div className="flex items-center gap-2 text-xs text-text-muted mb-2">
                   <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
                   <span className="flex-1 truncate">{job.pickup_location}</span>
                   <span>→</span>
                   <span className="w-2 h-2 rounded-full bg-danger flex-shrink-0" />
                   <span className="flex-1 truncate text-right">{job.dropoff_location}</span>
                 </div>
-                <div className="flex justify-between items-center mt-2 pt-2 border-t border-border">
+                <div className="flex justify-between items-center pb-2 border-b border-border">
                   <span className="text-xs text-text-muted">
-                    {job.truck ? `🚛 ${job.truck.plate_number}` : '⏳ Unassigned'}
+                    {job.truck ? `🚛 ${job.truck.plate_number} · ${job.truck.truck_type_label}` : '⏳ Unassigned'}
                   </span>
                   <span className="font-heading text-sm font-semibold">
                     {job.total_rate ? formatCurrency(job.total_rate) : '—'}
                   </span>
                 </div>
-              </div>
-            </Link>
+              </Link>
+              {/* Contact info */}
+              {(job.truck || job.driver) && (
+                <div className="mt-2 space-y-1.5">
+                  {job.truck?.owner_name && (
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-text-muted">
+                        🚛 <span className="text-text-secondary font-medium">{job.truck.owner_name}</span>
+                        {job.truck.contact_number && <span className="ml-1 text-text-muted">· {job.truck.contact_number}</span>}
+                      </div>
+                      <div className="flex gap-1.5">
+                        {job.truck.contact_number && (
+                          <a href={`tel:${job.truck.contact_number}`}
+                            className="text-xs px-2 py-1 rounded-md font-semibold"
+                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                            Call
+                          </a>
+                        )}
+                        {job.truck.owner_id && (
+                          <Link href={`/chat/${job.truck.owner_id}`}
+                            className="text-xs px-2 py-1 rounded-md font-semibold"
+                            style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                            Chat
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {job.driver?.full_name && (
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-text-muted">
+                        👤 <span className="text-text-secondary font-medium">{job.driver.full_name}</span>
+                        {job.driver.contact_number && <span className="ml-1 text-text-muted">· {job.driver.contact_number}</span>}
+                      </div>
+                      <div className="flex gap-1.5">
+                        {job.driver.contact_number && (
+                          <a href={`tel:${job.driver.contact_number}`}
+                            className="text-xs px-2 py-1 rounded-md font-semibold"
+                            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                            Call
+                          </a>
+                        )}
+                        {job.driver.id && (
+                          <Link href={`/chat/${job.driver.id}`}
+                            className="text-xs px-2 py-1 rounded-md font-semibold"
+                            style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
+                            Chat
+                          </Link>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           ))}
           {recentJobs.length === 0 && (
             <div className="text-center text-text-muted text-sm py-8">No job orders yet</div>

@@ -32,9 +32,16 @@ function FleetContent() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [t, d] = await Promise.all([fetchTrucks({ search: search || undefined }), fetchDrivers()])
+      const [t] = await Promise.all([fetchTrucks({ search: search || undefined })])
       setTrucks(t)
-      setDrivers(d)
+
+      // Fleet managers and admins see all truck owners and their drivers
+      const { data: allDrivers } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, contact_number, email, company_name, is_verified')
+        .in('role', ['truck_owner', 'driver'])
+        .order('full_name')
+      setDrivers(allDrivers || [])
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
   }, [search])
@@ -241,18 +248,38 @@ function TruckCard({ truck }: { truck: Truck }) {
 
 function DriverCard({ driver }: { driver: any }) {
   return (
-    <div className="bg-bg-secondary border border-border rounded-lg p-3.5 flex items-center gap-3">
-      <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center font-heading text-sm font-bold text-text-secondary flex-shrink-0">
-        {driver.full_name?.charAt(0) || '?'}
+    <div className="bg-bg-secondary border border-border rounded-lg p-3.5">
+      <div className="flex items-center gap-3 mb-2">
+        <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center font-heading text-sm font-bold text-text-secondary flex-shrink-0">
+          {driver.full_name?.charAt(0) || '?'}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-heading text-sm font-semibold">{driver.full_name}</div>
+          <div className="text-xs text-text-muted mt-0.5">
+            {driver.role === 'truck_owner' ? '🚛 Truck Owner' : '👤 Driver'}
+            {driver.company_name ? ` · ${driver.company_name}` : ''}
+          </div>
+          {driver.contact_number && <div className="text-xs text-text-muted mt-0.5">📞 {driver.contact_number}</div>}
+          {driver.email && <div className="text-xs text-text-muted mt-0.5">✉️ {driver.email}</div>}
+        </div>
+        <span className={`status-badge flex-shrink-0 ${driver.is_verified ? 'bg-success-bg text-success border-success-border' : 'bg-warning-bg text-warning border-warning-border'}`}>
+          {driver.is_verified ? 'Verified' : 'Pending'}
+        </span>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-heading text-sm font-semibold">{driver.full_name}</div>
-        <div className="text-xs text-text-muted mt-0.5">{driver.company_name || 'Individual Driver'}</div>
-        <div className="text-xs text-text-muted mt-0.5">{driver.contact_number || driver.email}</div>
+      <div className="flex gap-2">
+        {driver.contact_number && (
+          <a href={`tel:${driver.contact_number}`}
+            className="flex items-center gap-1 flex-1 justify-center py-1.5 rounded-lg text-xs font-bold"
+            style={{ background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.3)', color: '#22c55e', textDecoration: 'none' }}>
+            📞 Call
+          </a>
+        )}
+        <a href={`/chat/${driver.id}`}
+          className="flex items-center gap-1 flex-1 justify-center py-1.5 rounded-lg text-xs font-bold"
+          style={{ background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', color: '#60a5fa', textDecoration: 'none' }}>
+          💬 Message
+        </a>
       </div>
-      <span className={`status-badge ${driver.is_verified ? 'bg-success-bg text-success border-success-border' : 'bg-warning-bg text-warning border-warning-border'}`}>
-        {driver.is_verified ? 'Verified' : 'Pending'}
-      </span>
     </div>
   )
 }

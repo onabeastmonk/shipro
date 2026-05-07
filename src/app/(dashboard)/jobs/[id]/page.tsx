@@ -201,9 +201,40 @@ export default function JobDetailPage() {
       setJob(prev => prev ? { ...prev, status: newStatus } : null)
       toast.success(`Status updated to ${JOB_STATUS_LABELS[newStatus]}`)
       setShowStatusModal(false)
+      await sendStatusNotification(newStatus)
     } catch (err: any) {
       toast.error(err.message)
     } finally { setUpdatingStatus(false) }
+  }
+
+  async function sendStatusNotification(newStatus: string) {
+    if (!job || !userId) return
+    const statusLabel = JOB_STATUS_LABELS[newStatus as JobStatus] || newStatus
+    const msgText = `📦 ${job.job_number} status updated: ${JOB_STATUS_LABELS[job.status as JobStatus] || job.status} → ${statusLabel}`
+
+    // Get truck owner id
+    const truckOwnerId = (job as any).truck?.owner_id || job.assigned_driver_id
+    const recipients = new Set<string>()
+
+    if (truckOwnerId && truckOwnerId !== userId) recipients.add(truckOwnerId)
+    if (job.assigned_driver_id && job.assigned_driver_id !== userId) recipients.add(job.assigned_driver_id)
+
+    for (const recipientId of recipients) {
+      // Send chat message
+      await supabase.from('messages').insert({
+        sender_id: userId,
+        receiver_id: recipientId,
+        content: msgText,
+      })
+      // Send notification
+      await supabase.from('notifications').insert({
+        user_id: recipientId,
+        type: 'job_update',
+        title: `Job Status Updated`,
+        body: msgText,
+        data: { job_id: id, status: newStatus },
+      })
+    }
   }
 
   async function handlePostJob() {

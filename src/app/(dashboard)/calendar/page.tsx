@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import ContactCard from '@/components/ContactCard'
 import { formatDate } from '@/lib/utils'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -39,7 +40,7 @@ export default function CalendarPage() {
   useEffect(() => {
     async function load() {
       const [jobsRes, docsRes] = await Promise.all([
-        supabase.from('job_orders').select('id, job_number, client_name, delivery_date, status, pickup_location, dropoff_location, total_rate'),
+        supabase.from('job_orders').select('id, job_number, client_name, delivery_date, status, pickup_location, dropoff_location, total_rate, assigned_driver_id, contact_number, truck:trucks(plate_number, truck_type_label, owner_name, contact_number, owner_id), driver:profiles!assigned_driver_id(id, full_name, contact_number)'),
         supabase.from('truck_documents').select('id, document_type, expiry_date, status, truck:trucks(plate_number, owner_name)'),
       ])
 
@@ -269,19 +270,54 @@ export default function CalendarPage() {
               </div>
 
               {selectedEvent.data && selectedEvent.type.startsWith('job') && (
-                <div className="rounded-lg p-3 space-y-2" style={{ background: selectedEvent.bgColor, border: `1px solid ${selectedEvent.color}` }}>
-                  {[
-                    ['Client', selectedEvent.data.client_name],
-                    ['Pickup', selectedEvent.data.pickup_location],
-                    ['Drop-off', selectedEvent.data.dropoff_location],
-                    ['Rate', selectedEvent.data.total_rate ? `₱${Number(selectedEvent.data.total_rate).toLocaleString()}` : '—'],
-                    ['Status', selectedEvent.data.status?.replace(/_/g, ' ')],
-                  ].map(([k, v]) => (
-                    <div key={k} className="flex justify-between text-xs">
-                      <span className="text-text-muted">{k}</span>
-                      <span className="font-semibold text-right max-w-[60%] truncate" style={{ color: selectedEvent.color }}>{v}</span>
-                    </div>
-                  ))}
+                <div className="space-y-3">
+                  <div className="rounded-lg p-3 space-y-2" style={{ background: selectedEvent.bgColor, border: `1px solid ${selectedEvent.color}` }}>
+                    {[
+                      ['Job #', selectedEvent.data.job_number],
+                      ['Client', selectedEvent.data.client_name],
+                      ['Contact', selectedEvent.data.contact_number || '—'],
+                      ['Pickup', selectedEvent.data.pickup_location],
+                      ['Drop-off', selectedEvent.data.dropoff_location],
+                      ['Rate', selectedEvent.data.total_rate ? `₱${Number(selectedEvent.data.total_rate).toLocaleString()}` : '—'],
+                      ['Status', selectedEvent.data.status?.replace(/_/g, ' ')],
+                    ].map(([k, v]) => (
+                      <div key={k} className="flex justify-between text-xs">
+                        <span className="text-text-muted">{k}</span>
+                        <span className="font-semibold text-right max-w-[60%] truncate" style={{ color: selectedEvent.color }}>{v}</span>
+                      </div>
+                    ))}
+                    {selectedEvent.data.truck && (
+                      <div className="flex justify-between text-xs pt-1 border-t border-border">
+                        <span className="text-text-muted">Truck</span>
+                        <span className="font-semibold" style={{ color: selectedEvent.color }}>
+                          {selectedEvent.data.truck.plate_number} · {selectedEvent.data.truck.truck_type_label}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {selectedEvent.data.truck?.owner_name && (
+                    <ContactCard
+                      userId={selectedEvent.data.truck.owner_id}
+                      name={selectedEvent.data.truck.owner_name}
+                      contactNumber={selectedEvent.data.truck.contact_number}
+                      label="Truck Owner"
+                      compact
+                    />
+                  )}
+                  {selectedEvent.data.driver?.full_name && (
+                    <ContactCard
+                      userId={selectedEvent.data.driver.id}
+                      name={selectedEvent.data.driver.full_name}
+                      contactNumber={selectedEvent.data.driver.contact_number}
+                      label="Driver"
+                      compact
+                    />
+                  )}
+                  <a href={`/jobs/${selectedEvent.data.id}`}
+                    className="block text-center py-2 rounded-lg text-xs font-bold"
+                    style={{ background: selectedEvent.bgColor, border: `1px solid ${selectedEvent.color}`, color: selectedEvent.color }}>
+                    View Full Job Order →
+                  </a>
                 </div>
               )}
 
