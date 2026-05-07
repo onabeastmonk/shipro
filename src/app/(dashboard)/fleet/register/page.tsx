@@ -9,8 +9,8 @@ import { registerTruck, uploadTruckDocument } from '@/lib/api'
 import { TRUCK_TYPE_LABELS, DOCUMENT_TYPES, type TruckType } from '@/types'
 import { ChevronLeft, Upload, Check } from 'lucide-react'
 
-const REQUIRED_DOCS = ['OR/CR', 'LTFRB Permit', 'Insurance', "Driver's License", 'Medical Certificate', 'Vehicle Photos']
-const OPTIONAL_DOCS = ['Business Permit', 'BIR Registration', 'DTI / SEC Registration']
+const REQUIRED_DOCS = ['OR/CR', 'LTFRB Permit', 'Insurance', 'Vehicle Photos']
+const OPTIONAL_DOCS: string[] = []
 
 export default function RegisterTruckPage() {
   const router = useRouter()
