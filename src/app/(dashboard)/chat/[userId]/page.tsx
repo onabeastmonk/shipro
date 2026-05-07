@@ -54,10 +54,17 @@ export default function ChatThreadPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `receiver_id=eq.${session.user.id}`,
-        }, (payload) => {
-          if (payload.new.sender_id === otherUserId) {
-            setMessages(prev => [...prev, payload.new])
+        }, (payload: any) => {
+          const msg = payload.new
+          const isRelevant =
+            (msg.sender_id === otherUserId && msg.receiver_id === session.user.id) ||
+            (msg.sender_id === session.user.id && msg.receiver_id === otherUserId)
+          if (isRelevant) {
+            setMessages(prev => {
+              // avoid duplicate if optimistic message already added
+              if (prev.find(m => m.id === msg.id)) return prev
+              return [...prev, msg]
+            })
           }
         })
         .subscribe()
