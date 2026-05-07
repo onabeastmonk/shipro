@@ -42,11 +42,19 @@ export default function DriversPage() {
   }, [router])
 
   async function loadDrivers(uid: string, role: string | null) {
-    const query = supabase.from('truck_drivers').select('*').order('created_at', { ascending: false })
-    if (role !== 'admin' && role !== 'fleet_manager') {
-      query.eq('owner_id', uid)
+    let query = supabase
+      .from('truck_drivers')
+      .select('*, owner:profiles!owner_id(full_name, contact_number)')
+      .order('created_at', { ascending: false })
+
+    // Truck owners only see their own drivers
+    if (role === 'truck_owner') {
+      query = query.eq('owner_id', uid)
     }
-    const { data } = await query
+    // Admins and fleet managers see all drivers
+
+    const { data, error } = await query
+    if (error) console.error('Error loading drivers:', error)
     setDrivers(data || [])
     setLoading(false)
   }
@@ -214,6 +222,9 @@ export default function DriversPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="font-heading text-sm font-bold text-text-primary">{driver.full_name}</span>
+                    {(userRole === 'admin' || userRole === 'fleet_manager') && driver.owner && (
+                      <span className="text-xs text-text-muted ml-1">· Under: {driver.owner.full_name}</span>
+                    )}
                       <span className={cn('text-xs px-2 py-0.5 rounded-full font-semibold',
                         driver.status === 'active' ? 'bg-success-bg text-success' : 'bg-bg-tertiary text-text-muted')}>
                         {driver.status}

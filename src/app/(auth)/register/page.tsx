@@ -17,7 +17,7 @@ export default function RegisterPage() {
     contact_number: '',
     password: '',
     confirm_password: '',
-    role: 'driver' as UserRole,
+    role: 'fleet_manager' as UserRole,
   })
 
   function update(key: string, value: string) {
@@ -59,9 +59,9 @@ export default function RegisterPage() {
         <div>
           <label className="form-label">Account Type</label>
           <select className="form-input" value={form.role} onChange={e => update('role', e.target.value)}>
-            <option value="admin">Fleet Manager / Admin</option>
-            <option value="driver">Driver / Trucking Company</option>
-            <option value="warehouse">Warehouse / Dispatcher</option>
+            <option value="fleet_manager">Fleet Manager</option>
+            <option value="truck_owner">Truck Owner</option>
+            <option value="driver">Driver</option>
             <option value="client">Client / Viewer</option>
           </select>
         </div>

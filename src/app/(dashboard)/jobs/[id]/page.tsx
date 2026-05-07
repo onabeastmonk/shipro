@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
 import { formatDate, formatCurrency, getJobStatusColor } from '@/lib/utils'
 import { JOB_STATUS_LABELS, DELIVERY_STEPS, type JobOrder, type JobStatus } from '@/types'
-import { ChevronLeft, CheckCircle, Circle, Clock, Upload, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, CheckCircle, Circle, Clock, Upload, AlertTriangle, Edit, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ContactCard from '@/components/ContactCard'
 
@@ -215,7 +215,6 @@ export default function JobDetailPage() {
     // Get truck owner id
     const truckOwnerId = (job as any).truck?.owner_id || job.assigned_driver_id
     const recipientsMap: Record<string, boolean> = {}
-
     if (truckOwnerId && truckOwnerId !== userId) recipientsMap[truckOwnerId] = true
     if (job.assigned_driver_id && job.assigned_driver_id !== userId) recipientsMap[job.assigned_driver_id] = true
 
@@ -259,6 +258,20 @@ export default function JobDetailPage() {
     await loadJob()
   }
 
+  async function handleDelete() {
+    if (!confirm('Are you sure you want to delete this job order? This cannot be undone.')) return
+    try {
+      await supabase.from('job_applicants').delete().eq('job_order_id', id)
+      await supabase.from('delivery_status_logs').delete().eq('job_order_id', id)
+      await supabase.from('shipment_items').delete().eq('job_order_id', id)
+      await supabase.from('job_orders').delete().eq('id', id)
+      toast.success('Job order deleted')
+      router.push('/jobs')
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete')
+    }
+  }
+
   if (loading) return <DetailSkeleton />
   if (!job) return <div className="text-center p-8 text-text-muted">Job order not found</div>
 
@@ -281,9 +294,25 @@ export default function JobDetailPage() {
           <div className="text-xs text-text-muted font-mono">{job.job_number}</div>
           <h1 className="font-heading text-sm font-semibold leading-tight">{job.client_name}</h1>
         </div>
-        <span className={`status-badge ${getJobStatusColor(job.status)}`}>
-          {JOB_STATUS_LABELS[job.status]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`status-badge ${getJobStatusColor(job.status)}`}>
+            {JOB_STATUS_LABELS[job.status]}
+          </span>
+          {isAdmin && (
+            <>
+              <Link href={`/jobs/${id}/edit`}
+                className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors"
+                title="Edit job order">
+                <Edit size={16} className="text-text-muted" />
+              </Link>
+              <button onClick={handleDelete}
+                className="p-1.5 rounded-md hover:bg-danger-bg transition-colors"
+                title="Delete job order">
+                <Trash2 size={16} className="text-danger" />
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="p-4 space-y-4">
