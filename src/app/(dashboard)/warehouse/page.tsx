@@ -32,7 +32,7 @@ export default function WarehousePage() {
     contact_person: '', contact_number: '', email: '',
     type: 'main', status: 'active',
   })
-
+ 
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
