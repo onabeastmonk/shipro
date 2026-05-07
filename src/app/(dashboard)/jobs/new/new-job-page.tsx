@@ -14,6 +14,7 @@ const TRUCK_TYPES = Object.entries(TRUCK_TYPE_LABELS) as [TruckType, string][]
 export default function NewJobPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [warehouses, setWarehouses] = useState<any[]>([])
   const [items, setItems] = useState<ShipmentItemForm[]>([])
   const [form, setForm] = useState({
     pickup_location: '',
