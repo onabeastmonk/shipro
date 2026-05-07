@@ -35,6 +35,8 @@ export default function NewJobPage() {
     remarks: '',
     origin_warehouse_id: '',
     destination_warehouse_id: '',
+    rate_per_cbm: '',
+    pricing_mode: 'fixed',
   })
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [warehouseInventory, setWarehouseInventory] = useState<any[]>([])
@@ -369,17 +371,59 @@ export default function NewJobPage() {
 
         {/* RATES */}
         <Section title="RATES & FEES">
+          {/* Pricing mode toggle */}
+          <div className="grid grid-cols-2 gap-2 mb-1">
+            <button type="button"
+              onClick={() => update('pricing_mode', 'fixed')}
+              className="p-2.5 rounded-lg border text-left transition-all"
+              style={{
+                border: form.pricing_mode !== 'per_cbm' ? '2px solid #60a5fa' : '1px solid rgba(255,255,255,0.08)',
+                background: form.pricing_mode !== 'per_cbm' ? 'rgba(96,165,250,0.1)' : 'transparent',
+              }}>
+              <div className="text-xs font-bold" style={{ color: form.pricing_mode !== 'per_cbm' ? '#60a5fa' : '#a0a0a0' }}>Fixed Rate</div>
+              <div className="text-xs text-text-muted mt-0.5">Flat amount</div>
+            </button>
+            <button type="button"
+              onClick={() => update('pricing_mode', 'per_cbm')}
+              className="p-2.5 rounded-lg border text-left transition-all"
+              style={{
+                border: form.pricing_mode === 'per_cbm' ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.08)',
+                background: form.pricing_mode === 'per_cbm' ? 'rgba(34,197,94,0.1)' : 'transparent',
+              }}>
+              <div className="text-xs font-bold" style={{ color: form.pricing_mode === 'per_cbm' ? '#22c55e' : '#a0a0a0' }}>Per CBM</div>
+              <div className="text-xs text-text-muted mt-0.5">Rate × CBM loaded</div>
+            </button>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <FormGroup label="Base Rate (₱)">
-              <input className="form-input" type="number" step="0.01" placeholder="0.00"
-                value={form.base_rate} onChange={e => update('base_rate', e.target.value)} />
-            </FormGroup>
+            {form.pricing_mode === 'per_cbm' ? (
+              <FormGroup label="Rate per CBM (₱/CBM)">
+                <input className="form-input" type="number" step="0.01" placeholder="e.g. 500"
+                  value={form.rate_per_cbm} onChange={e => update('rate_per_cbm', e.target.value)} />
+              </FormGroup>
+            ) : (
+              <FormGroup label="Base Rate (₱)">
+                <input className="form-input" type="number" step="0.01" placeholder="0.00"
+                  value={form.base_rate} onChange={e => update('base_rate', e.target.value)} />
+              </FormGroup>
+            )}
             <FormGroup label="Other Charges (₱)">
               <input className="form-input" type="number" step="0.01" placeholder="0.00"
                 value={form.other_charges} onChange={e => update('other_charges', e.target.value)} />
             </FormGroup>
           </div>
-          {totalRate > 0 && (
+
+          {form.pricing_mode === 'per_cbm' && form.rate_per_cbm && totalCBM > 0 && (
+            <div className="bg-success-bg border border-success-border rounded-md p-3 text-xs">
+              <div className="text-success font-semibold mb-1">💰 Estimated Pay</div>
+              <div className="text-text-secondary">
+                ₱{parseFloat(form.rate_per_cbm).toLocaleString()} × {totalCBM.toFixed(3)} CBM = <strong className="text-text-primary">₱{(parseFloat(form.rate_per_cbm) * totalCBM).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+              </div>
+              <div className="text-text-muted mt-0.5">Final pay depends on actual CBM loaded</div>
+            </div>
+          )}
+
+          {totalRate > 0 && form.pricing_mode !== 'per_cbm' && (
             <div className="bg-bg-tertiary rounded-md p-3 text-center">
               <div className="text-xs text-text-muted mb-1">ESTIMATED TOTAL</div>
               <div className="font-heading text-xl font-bold text-text-primary">
