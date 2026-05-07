@@ -96,13 +96,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     router.push('/login')
   }
 
-  const roleLabel = {
+  const roleLabelMap: Record<string, string> = {
     truck_owner: '🚛 Truck Owner',
     fleet_manager: '🏢 Fleet Manager',
     admin: '⚙️ Admin',
     driver: '👤 Driver',
     client: '👁️ Client',
-  }[user?.role || ''] || user?.role || ''
+  }
+  const roleLabel = roleLabelMap[user?.role || ''] || user?.role || ''
 
   return (
     <div className="flex bg-bg-primary" style={{ height: '100dvh', overflow: 'hidden' }}>
