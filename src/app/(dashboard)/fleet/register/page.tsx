@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
@@ -19,12 +19,44 @@ export default function RegisterTruckPage() {
   const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
   const [docExpiry, setDocExpiry] = useState<Record<string, string>>({})
 
+  const [truckOwners, setTruckOwners] = useState<any[]>([])
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>('')
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
   const [form, setForm] = useState({
     owner_name: '', business_name: '', contact_person: '',
-    contact_number: '', email: '', driver_name: '', driver_contact: '',
+    contact_number: '', email: '',
     plate_number: '', truck_type: '' as TruckType | '',
     truck_type_label: '', cbm_capacity: '', load_capacity_kg: '', ltfrb_number: '',
   })
+
+  useEffect(() => {
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      setUserId(session.user.id)
+      const { data: profile } = await supabase.from('profiles').select('role, full_name, company_name, contact_number, email').eq('id', session.user.id).single()
+      setUserRole(profile?.role || null)
+
+      if (profile?.role === 'truck_owner') {
+        // Auto-fill from own profile
+        setSelectedOwnerId(session.user.id)
+        setForm(f => ({
+          ...f,
+          owner_name: profile.full_name || '',
+          business_name: profile.company_name || '',
+          contact_person: profile.full_name || '',
+          contact_number: profile.contact_number || '',
+          email: profile.email || '',
+        }))
+      } else if (profile?.role === 'admin' || profile?.role === 'fleet_manager') {
+        // Load all truck owners for selection
+        const { data: owners } = await supabase.from('profiles').select('id, full_name, company_name, contact_number, email').eq('role', 'truck_owner').order('full_name')
+        setTruckOwners(owners || [])
+      }
+    }
+    load()
+  }, [])
 
   function update(key: string, value: string) {
     setForm(f => {
@@ -40,7 +72,7 @@ export default function RegisterTruckPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    const required = ['owner_name', 'contact_person', 'contact_number', 'email', 'driver_name', 'driver_contact', 'plate_number', 'truck_type', 'cbm_capacity', 'load_capacity_kg']
+    const required = ['owner_name', 'contact_person', 'contact_number', 'email', 'plate_number', 'truck_type', 'cbm_capacity', 'load_capacity_kg']
     for (const field of required) {
       if (!form[field as keyof typeof form]) {
         toast.error('Please fill in all required fields')
@@ -63,15 +95,13 @@ export default function RegisterTruckPage() {
           contact_person: form.contact_person,
           contact_number: form.contact_number,
           email: form.email,
-          driver_name: form.driver_name,
-          driver_contact: form.driver_contact,
           plate_number: form.plate_number,
           truck_type: form.truck_type,
           truck_type_label: TRUCK_TYPE_LABELS[form.truck_type as TruckType],
           cbm_capacity: parseFloat(form.cbm_capacity),
           load_capacity_kg: parseFloat(form.load_capacity_kg),
           ltfrb_number: form.ltfrb_number || null,
-          owner_id: session.user.id,
+          owner_id: selectedOwnerId || session.user.id,
           verification_status: 'pending',
         })
         .select()
@@ -113,43 +143,45 @@ export default function RegisterTruckPage() {
 
       <div className="p-4 space-y-6">
         {/* OWNER */}
-        <Section title="OWNER INFORMATION">
-          <FormGroup label="Truck Owner / Company Name *">
-            <input className="form-input" placeholder="Full name or company" required
-              value={form.owner_name} onChange={e => update('owner_name', e.target.value)} />
-          </FormGroup>
-          <FormGroup label="Business Name">
-            <input className="form-input" placeholder="Registered business name"
-              value={form.business_name} onChange={e => update('business_name', e.target.value)} />
-          </FormGroup>
-          <div className="grid grid-cols-2 gap-3">
-            <FormGroup label="Contact Person *">
-              <input className="form-input" placeholder="Name" required
-                value={form.contact_person} onChange={e => update('contact_person', e.target.value)} />
+        <Section title="TRUCK OWNER">
+          {/* Admin/Fleet Manager selects truck owner */}
+          {(userRole === 'admin' || userRole === 'fleet_manager') && truckOwners.length > 0 && (
+            <FormGroup label="Select Truck Owner *">
+              <select className="form-input" value={selectedOwnerId}
+                onChange={e => {
+                  const owner = truckOwners.find(o => o.id === e.target.value)
+                  setSelectedOwnerId(e.target.value)
+                  if (owner) {
+                    update('owner_name', owner.full_name || '')
+                    update('business_name', owner.company_name || '')
+                    update('contact_person', owner.full_name || '')
+                    update('contact_number', owner.contact_number || '')
+                    update('email', owner.email || '')
+                  }
+                }}>
+                <option value="">— Select truck owner —</option>
+                {truckOwners.map(o => (
+                  <option key={o.id} value={o.id}>{o.full_name} {o.company_name ? `· ${o.company_name}` : ''}</option>
+                ))}
+              </select>
             </FormGroup>
-            <FormGroup label="Contact Number *">
-              <input className="form-input" type="tel" placeholder="+63" required
-                value={form.contact_number} onChange={e => update('contact_number', e.target.value)} />
-            </FormGroup>
-          </div>
-          <FormGroup label="Email Address *">
-            <input className="form-input" type="email" placeholder="email@example.com" required
-              value={form.email} onChange={e => update('email', e.target.value)} />
-          </FormGroup>
-        </Section>
+          )}
 
-        {/* DRIVER */}
-        <Section title="DRIVER INFORMATION">
-          <div className="grid grid-cols-2 gap-3">
-            <FormGroup label="Driver Name *">
-              <input className="form-input" placeholder="Full name" required
-                value={form.driver_name} onChange={e => update('driver_name', e.target.value)} />
-            </FormGroup>
-            <FormGroup label="Driver Contact *">
-              <input className="form-input" type="tel" placeholder="+63" required
-                value={form.driver_contact} onChange={e => update('driver_contact', e.target.value)} />
-            </FormGroup>
-          </div>
+          {/* Auto-filled owner info */}
+          {form.owner_name && (
+            <div className="bg-bg-tertiary rounded-lg p-3 space-y-1.5">
+              <div className="text-xs text-text-muted font-bold uppercase mb-1">Owner Details (Auto-filled)</div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Name</span><span className="font-semibold text-text-primary">{form.owner_name}</span></div>
+              {form.business_name && <div className="flex justify-between text-xs"><span className="text-text-muted">Business</span><span className="font-semibold text-text-primary">{form.business_name}</span></div>}
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Contact</span><span className="font-semibold text-text-primary">{form.contact_number}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Email</span><span className="font-semibold text-text-primary">{form.email}</span></div>
+            </div>
+          )}
+
+          {/* Truck owners register their own truck - editable */}
+          {userRole === 'truck_owner' && (
+            <p className="text-xs text-text-muted">✓ Registering under your account: <strong>{form.owner_name}</strong></p>
+          )}
         </Section>
 
         {/* TRUCK */}

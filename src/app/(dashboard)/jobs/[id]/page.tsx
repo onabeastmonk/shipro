@@ -467,7 +467,7 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {/* TRUCK OWNER: Apply section */}
+        {/* TRUCK OWNER ONLY: Apply section - drivers cannot apply directly */}
         {userRole === 'truck_owner' && (job.status === 'open_for_applications' || job.status === 'pending_selection' || job.status === 'posted') && (
           <div className="bg-bg-secondary border border-border rounded-lg p-4">
             <div className="text-xs font-semibold text-text-muted uppercase mb-3">Your Application</div>
