@@ -9,6 +9,7 @@ import { formatDate, formatCurrency, getJobStatusColor } from '@/lib/utils'
 import { JOB_STATUS_LABELS, DELIVERY_STEPS, type JobOrder, type JobStatus } from '@/types'
 import { ChevronLeft, CheckCircle, Circle, Clock, Upload, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import ContactCard from '@/components/ContactCard'
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -417,18 +418,34 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {/* Assigned Truck */}
+        {/* Assigned Truck + Contact */}
         {job.truck && (
-          <div className="bg-bg-secondary border border-border rounded-lg p-4">
-            <div className="text-xs text-text-muted font-semibold uppercase mb-2">Assigned Truck</div>
+          <div className="bg-bg-secondary border border-border rounded-lg p-4 space-y-3">
+            <div className="text-xs text-text-muted font-semibold uppercase">Assigned Truck</div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-md bg-bg-tertiary flex items-center justify-center text-xl flex-shrink-0">🚛</div>
               <div className="flex-1">
-                <div className="font-heading text-sm font-semibold">{job.truck.owner_name}</div>
-                <div className="text-xs text-text-muted">{job.truck.plate_number} · {job.truck.truck_type_label}</div>
-                <div className="text-xs text-text-muted">{job.truck.driver_name}</div>
+                <div className="font-heading text-sm font-semibold">{job.truck.plate_number}</div>
+                <div className="text-xs text-text-muted">{job.truck.truck_type_label}</div>
               </div>
             </div>
+            {job.driver && (
+              <ContactCard
+                userId={job.assigned_driver_id}
+                name={(job.driver as any).full_name}
+                role="truck_owner"
+                contactNumber={(job.driver as any).contact_number}
+                email={(job.driver as any).email}
+                label="Truck Owner / Driver"
+              />
+            )}
+            {!job.driver && job.truck.owner_name && (
+              <ContactCard
+                name={job.truck.owner_name}
+                contactNumber={job.truck.contact_number}
+                label="Truck Owner"
+              />
+            )}
           </div>
         )}
 

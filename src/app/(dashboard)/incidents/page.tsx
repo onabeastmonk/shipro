@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
 import { formatDate } from '@/lib/utils'
 import { Plus, AlertTriangle, Upload, Camera } from 'lucide-react'
+import ContactCard from '@/components/ContactCard'
 import { cn } from '@/lib/utils'
 
 const INCIDENT_TYPES = [

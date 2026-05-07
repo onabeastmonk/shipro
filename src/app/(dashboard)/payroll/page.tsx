@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, generatePayslipPDF, exportToCSV } from '@/lib/utils'
 import type { Payslip, PayslipForm } from '@/types'
 import { Plus, Printer, Download, X } from 'lucide-react'
+import ContactCard from '@/components/ContactCard'
 import { cn } from '@/lib/utils'
 
 export default function PayrollPage() {
@@ -128,6 +129,8 @@ export default function PayrollPage() {
 
 function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusChange: (status: string, datePaid?: string) => void }) {
   const driverName = (payslip.driver as any)?.full_name || 'Unknown Driver'
+  const driverContact = (payslip.driver as any)?.contact_number || null
+  const driverId = (payslip.driver as any)?.id || null
   const jobNum = (payslip.job_order as any)?.job_number || '—'
   const statusColor = {
     paid: 'bg-success-bg text-success border-success-border',
@@ -167,7 +170,14 @@ function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusCh
         <span className={`status-badge ${statusColor}`}>{payslip.payment_status}</span>
       </div>
       <div className="font-heading text-2xl font-bold my-2">{formatCurrency(payslip.total_amount)}</div>
-      <div className="flex gap-2">
+      <ContactCard
+        userId={driverId}
+        name={driverName}
+        contactNumber={driverContact}
+        label="Truck Owner / Driver"
+        compact
+      />
+      <div className="flex gap-2 mt-2">
         <button onClick={handlePrint} className="btn btn-sm btn-outline flex items-center gap-1.5 flex-1">
           <Printer size={12} /> Print PDF
         </button>

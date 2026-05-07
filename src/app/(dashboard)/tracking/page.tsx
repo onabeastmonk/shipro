@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { getJobStatusColor, formatDate, formatCurrency } from '@/lib/utils'
 import { JOB_STATUS_LABELS, DELIVERY_STEPS, type JobOrder, type JobStatus } from '@/types'
 import { Search, X, MapPin, CheckCircle, Circle, Clock } from 'lucide-react'
+import ContactCard from '@/components/ContactCard'
 import { cn } from '@/lib/utils'
 
 declare global {
@@ -284,14 +285,21 @@ export default function TrackingPage() {
                     <InfoBox label="Contact" value={detailJob.contact_number} />
                   </div>
 
-                  {/* Assigned truck */}
+                  {/* Assigned truck + contact */}
                   {detailJob.truck && (
-                    <div className="bg-bg-tertiary rounded-lg p-3">
-                      <div className="text-xs text-text-muted uppercase font-semibold mb-2">Assigned Truck</div>
-                      <div className="text-sm font-semibold">{detailJob.truck.owner_name}</div>
-                      <div className="text-xs text-text-muted">{detailJob.truck.plate_number} · {detailJob.truck.truck_type_label}</div>
-                      <div className="text-xs text-text-muted">Driver: {detailJob.truck.driver_name}</div>
-                      {detailJob.truck.contact_number && <div className="text-xs text-text-muted">📞 {detailJob.truck.contact_number}</div>}
+                    <div className="space-y-2">
+                      <div className="bg-bg-tertiary rounded-lg p-3">
+                        <div className="text-xs text-text-muted uppercase font-semibold mb-1">Assigned Truck</div>
+                        <div className="text-sm font-semibold">{detailJob.truck.plate_number}</div>
+                        <div className="text-xs text-text-muted">{detailJob.truck.truck_type_label} · Driver: {detailJob.truck.driver_name}</div>
+                      </div>
+                      <ContactCard
+                        userId={detailJob.assigned_driver_id}
+                        name={detailJob.truck.owner_name || detailJob.truck.driver_name}
+                        contactNumber={detailJob.truck.contact_number}
+                        label="Truck Owner / Driver"
+                        compact
+                      />
                     </div>
                   )}
 
