@@ -8,7 +8,7 @@ import type { User } from '@/types'
 import {
   LayoutDashboard, ClipboardList, MapPin, Truck, DollarSign,
   Bell, LogOut, X, ChevronRight, Calendar, AlertTriangle, Users,
-  MessageCircle, Phone, MoreHorizontal, Warehouse
+  MessageCircle, Phone, MoreHorizontal, Warehouse, ShieldCheck, UserCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -20,6 +20,9 @@ const NAV_ITEMS = [
   { href: '/payroll', label: 'Payroll', icon: DollarSign },
   { href: '/drivers', label: 'My Drivers', icon: Users },
   { href: '/warehouse', label: 'Warehouse', icon: Warehouse },
+  { href: '/verification', label: 'Verification', icon: ShieldCheck },
+  { href: '/owner-profile', label: 'My Team', icon: UserCheck },
+  { href: '/driver-application', label: 'My Application', icon: UserCheck },
   { href: '/chat', label: 'Messages', icon: MessageCircle },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
   { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
@@ -36,6 +39,7 @@ const BOTTOM_NAV_PRIMARY = [
 const BOTTOM_NAV_MORE = [
   { href: '/tracking', label: 'Tracking', icon: MapPin },
   { href: '/warehouse', label: 'Warehouse', icon: Warehouse },
+  { href: '/verification', label: 'Verify', icon: ShieldCheck },
   { href: '/payroll', label: 'Payroll', icon: DollarSign },
   { href: '/drivers', label: 'Drivers', icon: Users },
   { href: '/calendar', label: 'Calendar', icon: Calendar },
