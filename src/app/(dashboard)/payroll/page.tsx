@@ -236,8 +236,6 @@ function NewPayslipModal({ userId, onClose, onSave }: {
     }
   }
 
-  const total = (form.base_rate || 0) + (form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0) - (form.deductions || 0)
-
   // Computed values
   const basePay = pricingMode === 'per_cbm'
     ? (form.rate_per_cbm || 0) * (form.actual_cbm || 0)
