@@ -128,7 +128,7 @@ export default function WarehousePage() {
           <h1 className="font-heading text-2xl font-bold text-text-primary">Warehouses</h1>
           <p className="text-text-muted text-sm mt-0.5">Manage locations & inventory</p>
         </div>
-        {(userRole === 'admin' || userRole === 'fleet_manager') && (
+        {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
           <button onClick={openAdd} className="btn btn-primary btn-sm flex items-center gap-1.5">
             <Plus size={14} /> Add Warehouse
           </button>
@@ -193,7 +193,7 @@ export default function WarehousePage() {
                         {inTransit} in transit
                       </span>
                     )}
-                    {(userRole === 'admin' || userRole === 'fleet_manager') && (
+                    {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
                       <button onClick={() => openEdit(wh)}
                         className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors">
                         <Edit size={15} className="text-text-muted" />

@@ -18,6 +18,11 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true)
   const [showStatusModal, setShowStatusModal] = useState(false)
   const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [showLoadedModal, setShowLoadedModal] = useState(false)
+  const [loadedCBM, setLoadedCBM] = useState<string>('')
+  const [unloadedItems, setUnloadedItems] = useState<string>('')
+  const [loadingNote, setLoadingNote] = useState<string>('')
+  const [pendingLoadedStatus, setPendingLoadedStatus] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userTrucks, setUserTrucks] = useState<any[]>([])
@@ -180,9 +185,19 @@ export default function JobDetailPage() {
   async function handleStatusUpdate(newStatus: JobStatus) {
     if (!userId || !job) return
 
-    // Only assigned driver or admin can update status
+    // Only assigned driver/truck_owner or admin can update status
     if (userRole === 'truck_owner' && job.assigned_driver_id !== userId) {
       toast.error('Only the assigned truck owner can update delivery status')
+      return
+    }
+
+    // When marking as loaded — show CBM confirmation modal
+    // Can be done by truck_owner OR warehouse_manager
+    if (newStatus === 'loaded') {
+      setLoadedCBM(totalCBM.toFixed(3))
+      setUnloadedItems('')
+      setLoadingNote('')
+      setShowLoadedModal(true)
       return
     }
 
@@ -251,6 +266,52 @@ export default function JobDetailPage() {
     }
   }
 
+  async function handleLoadedConfirm() {
+    if (!userId || !job) return
+    setUpdatingStatus(true)
+    setShowLoadedModal(false)
+    try {
+      const actualCBM = parseFloat(loadedCBM) || 0
+      const confirmedBy = isWarehouseManager ? 'Warehouse Manager' : 'Truck Owner'
+      const note = `Loaded ${actualCBM} CBM (confirmed by ${confirmedBy})${unloadedItems ? ` — Not loaded: ${unloadedItems}` : ''}${loadingNote ? ` — ${loadingNote}` : ''}`
+
+      await supabase.from('job_orders').update({
+        status: 'loaded',
+        actual_cbm: actualCBM,
+      }).eq('id', id)
+
+      await supabase.from('delivery_status_logs').insert({
+        job_order_id: id, status: 'loaded',
+        logged_by: userId, note,
+      })
+
+      // Update warehouse movements to in_transit with actual CBM
+      const { data: movements } = await supabase
+        .from('warehouse_movements')
+        .select('id')
+        .eq('job_order_id', id)
+        .eq('status', 'pending')
+
+      if (movements && movements.length > 0) {
+        for (const mov of movements) {
+          await supabase.from('warehouse_movements').update({
+            status: 'in_transit',
+            cbm: actualCBM,
+            notes: unloadedItems ? `Partial: ${unloadedItems}` : null,
+          }).eq('id', mov.id)
+        }
+      }
+
+      setJob(prev => prev ? { ...prev, status: 'loaded' } : null)
+      toast.success(`✅ Loaded confirmed — ${actualCBM} CBM`)
+      setShowStatusModal(false)
+      await sendStatusNotification('loaded')
+      await loadJob()
+    } catch (err: any) {
+      toast.error(err.message)
+    } finally { setUpdatingStatus(false) }
+  }
+
   async function handlePostJob() {
     await supabase.from('job_orders').update({ status: 'open_for_applications' }).eq('id', id)
     toast.success('Job posted! Drivers can now apply.')
@@ -294,6 +355,7 @@ export default function JobDetailPage() {
   const statusLog = job.status_logs || []
   const totalCBM = job.shipment_items?.reduce((sum: number, item: any) => sum + (item.total_cbm || 0), 0) ?? job.total_cbm ?? 0
   const isAdmin = userRole === 'admin' || userRole === 'fleet_manager'
+  const isWarehouseManager = userRole === 'warehouse_manager'
   const isTruckOwner = userRole === 'truck_owner'
   const isAssignedTruckOwner = isTruckOwner && job.assigned_driver_id === userId
   const pendingApplicants = (job.applicants || []).filter((a: any) => a.status === 'pending')
@@ -815,6 +877,97 @@ export default function JobDetailPage() {
               <button onClick={() => setViewTruckDetails(null)} className="btn btn-secondary btn-full">
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loaded CBM Confirmation Modal */}
+      {showLoadedModal && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center">
+          <div className="bg-bg-secondary w-full md:max-w-md rounded-t-2xl md:rounded-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+            <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1 md:hidden" />
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-bg-secondary z-10">
+              <div>
+                <h2 className="font-heading text-base font-bold">📦 Confirm Loading</h2>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {isWarehouseManager ? '🏭 Warehouse Manager confirmation' : '🚛 Truck Owner confirmation'}
+                </p>
+              </div>
+              <button onClick={() => setShowLoadedModal(false)}
+                style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: '16px' }}>
+                ✕
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* Target CBM */}
+              <div className="bg-info-bg border border-info-border rounded-lg p-3 flex justify-between items-center">
+                <div>
+                  <div className="text-xs text-text-muted">Target CBM for this job</div>
+                  <div className="font-heading text-lg font-bold text-info">{totalCBM.toFixed(3)} CBM</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-text-muted">Items</div>
+                  <div className="font-bold text-text-primary">{job?.shipment_items?.length || 0} items</div>
+                </div>
+              </div>
+
+              {/* Items list */}
+              {job?.shipment_items && job.shipment_items.length > 0 && (
+                <div className="bg-bg-tertiary rounded-lg p-3">
+                  <div className="text-xs text-text-muted font-bold uppercase mb-2">Items to Load</div>
+                  <div className="space-y-1.5">
+                    {job.shipment_items.map((item: any) => (
+                      <div key={item.id} className="flex justify-between text-xs">
+                        <span className="text-text-secondary">{item.item_name} ×{item.quantity}</span>
+                        <span className="text-info font-medium">{item.total_cbm?.toFixed(3)} CBM</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Actual CBM loaded */}
+              <div>
+                <label className="form-label">Actual CBM Loaded *</label>
+                <input className="form-input text-lg font-bold" type="number" step="0.001"
+                  placeholder={totalCBM.toFixed(3)} value={loadedCBM}
+                  onChange={e => setLoadedCBM(e.target.value)} />
+                {parseFloat(loadedCBM) > 0 && parseFloat(loadedCBM) < totalCBM && (
+                  <div className="mt-2 p-2.5 rounded-lg text-xs font-semibold"
+                    style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                    ⚠️ Shortfall: {(totalCBM - parseFloat(loadedCBM)).toFixed(3)} CBM not loaded
+                    <br />This will be reflected in payroll calculation
+                  </div>
+                )}
+                {parseFloat(loadedCBM) >= totalCBM && parseFloat(loadedCBM) > 0 && (
+                  <div className="mt-1 text-xs text-success font-semibold">✓ Full load — no deductions</div>
+                )}
+              </div>
+
+              {/* Items not loaded */}
+              <div>
+                <label className="form-label">Items NOT Loaded (if any)</label>
+                <textarea className="form-input" rows={2}
+                  placeholder="e.g. 2 units Refrigerator - too big for truck, 1 unit Washing Machine"
+                  value={unloadedItems} onChange={e => setUnloadedItems(e.target.value)} />
+              </div>
+
+              {/* Note */}
+              <div>
+                <label className="form-label">Note / Reason</label>
+                <input className="form-input" placeholder="e.g. Truck full, items too big, client request..."
+                  value={loadingNote} onChange={e => setLoadingNote(e.target.value)} />
+              </div>
+
+              <div className="flex gap-3 pb-2">
+                <button onClick={() => setShowLoadedModal(false)} className="btn btn-secondary flex-1">Cancel</button>
+                <button onClick={handleLoadedConfirm}
+                  disabled={!loadedCBM || parseFloat(loadedCBM) <= 0 || updatingStatus}
+                  className="btn btn-primary flex-1">
+                  {updatingStatus ? 'Saving...' : '✓ Confirm Loaded'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -148,7 +148,7 @@ function JobsContent() {
           <h1 className="font-heading text-2xl font-bold text-text-primary">Job Orders</h1>
           <p className="text-text-muted text-sm mt-0.5">{jobs.length} orders found</p>
         </div>
-        {(userRole === 'admin' || userRole === 'fleet_manager') && (
+        {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
           <Link href="/jobs/new" className="btn btn-primary btn-sm flex items-center gap-1.5">
             <Plus size={15} /> New Order
           </Link>
@@ -188,7 +188,7 @@ function JobsContent() {
           <div className="text-4xl mb-3">📋</div>
           <p className="text-text-secondary font-medium">No job orders found</p>
           <p className="text-text-muted text-sm mt-1">Try adjusting your filters</p>
-          {(userRole === 'admin' || userRole === 'fleet_manager') && (
+          {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
             <Link href="/jobs/new" className="btn btn-primary btn-sm mt-4 inline-flex">
               <Plus size={14} /> Create Job Order
             </Link>

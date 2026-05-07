@@ -2,7 +2,7 @@
 // shiPRO - TypeScript Type Definitions
 // ============================================================
 
-export type UserRole = 'admin' | 'truck_owner' | 'fleet_manager' | 'driver' | 'client'
+export type UserRole = 'admin' | 'fleet_manager' | 'warehouse_manager' | 'truck_owner' | 'driver' | 'client'
 
 export type VerificationStatus = 'pending' | 'for_review' | 'approved' | 'rejected' | 'expired'
 

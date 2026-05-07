@@ -121,6 +121,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const roleLabelMap: Record<string, string> = {
     truck_owner: '🚛 Truck Owner', fleet_manager: '🏢 Fleet Manager',
+    warehouse_manager: '🏭 Warehouse Manager',
     admin: '⚙️ Admin', driver: '👤 Driver', client: '👁️ Client',
   }
   const roleLabel = roleLabelMap[user?.role || ''] || user?.role || ''

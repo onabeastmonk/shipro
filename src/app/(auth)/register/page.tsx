@@ -60,6 +60,7 @@ export default function RegisterPage() {
           <label className="form-label">Account Type</label>
           <select className="form-input" value={form.role} onChange={e => update('role', e.target.value)}>
             <option value="fleet_manager">Fleet Manager</option>
+            <option value="warehouse_manager">Warehouse Manager</option>
             <option value="truck_owner">Truck Owner</option>
             <option value="driver">Driver</option>
             <option value="client">Client / Viewer</option>

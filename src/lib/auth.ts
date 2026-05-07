@@ -78,9 +78,9 @@ export function hasRole(user: User | null, roles: UserRole[]): boolean {
 }
 
 export function isAdmin(user: User | null): boolean {
-  return hasRole(user, ['admin', 'fleet_manager'])
+  return hasRole(user, ['admin', 'fleet_manager', 'warehouse_manager'])
 }
 
 export function canManageJobs(user: User | null): boolean {
-  return hasRole(user, ['admin', 'fleet_manager'])
+  return hasRole(user, ['admin', 'fleet_manager', 'warehouse_manager'])
 }
