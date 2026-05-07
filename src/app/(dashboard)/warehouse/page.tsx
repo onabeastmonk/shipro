@@ -48,7 +48,7 @@ export default function WarehousePage() {
   async function loadWarehouses() {
     const { data, error } = await supabase
       .from('warehouses')
-      .select('*, inventory:warehouse_inventory(id, quantity, cbm_per_unit), movements:warehouse_movements(id, status)')
+      .select('*, inventory:warehouse_inventory(id, quantity, cbm_per_unit), outbound:warehouse_movements!from_warehouse_id(id, status), inbound:warehouse_movements!to_warehouse_id(id, status)')
       .order('created_at', { ascending: false })
     if (error) console.error('Warehouse load error:', error)
     setWarehouses(data || [])
@@ -115,7 +115,8 @@ export default function WarehousePage() {
   const totalCBM = warehouses.reduce((s, w) =>
     s + (w.inventory?.reduce((ss: number, i: any) => ss + (i.quantity * i.cbm_per_unit || 0), 0) || 0), 0)
   const activeMovements = warehouses.reduce((s, w) =>
-    s + (w.movements?.filter((m: any) => m.status === 'in_transit').length || 0), 0)
+    s + (w.outbound?.filter((m: any) => m.status === 'in_transit').length || 0)
+    + (w.inbound?.filter((m: any) => m.status === 'in_transit').length || 0), 0)
 
   return (
     <div className="max-w-2xl mx-auto p-4">
@@ -178,7 +179,7 @@ export default function WarehousePage() {
             const itemCount = wh.inventory?.length || 0
             const totalQty = wh.inventory?.reduce((s: number, i: any) => s + i.quantity, 0) || 0
             const whCBM = wh.inventory?.reduce((s: number, i: any) => s + (i.quantity * i.cbm_per_unit || 0), 0) || 0
-            const inTransit = wh.movements?.filter((m: any) => m.status === 'in_transit').length || 0
+            const inTransit = (wh.outbound?.filter((m: any) => m.status === 'in_transit').length || 0) + (wh.inbound?.filter((m: any) => m.status === 'in_transit').length || 0)
 
             return (
               <Link key={wh.id} href={`/warehouse/${wh.id}`}>
