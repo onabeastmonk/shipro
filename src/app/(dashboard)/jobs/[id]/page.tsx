@@ -202,6 +202,21 @@ export default function JobDetailPage() {
       toast.success(`Status updated to ${JOB_STATUS_LABELS[newStatus]}`)
       setShowStatusModal(false)
       await sendStatusNotification(newStatus)
+
+      // Auto-complete warehouse movements when job is delivered or completed
+      if (newStatus === 'delivered' || newStatus === 'completed') {
+        const { data: movements } = await supabase
+          .from('warehouse_movements')
+          .select('id')
+          .eq('job_order_id', id)
+          .eq('status', 'in_transit')
+        if (movements && movements.length > 0) {
+          for (const mov of movements) {
+            await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
+          }
+          toast.success(`${movements.length} warehouse movement(s) marked as completed`)
+        }
+      }
     } catch (err: any) {
       toast.error(err.message)
     } finally { setUpdatingStatus(false) }

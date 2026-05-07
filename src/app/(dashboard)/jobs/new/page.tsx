@@ -37,12 +37,14 @@ export default function NewJobPage() {
     destination_warehouse_id: '',
   })
   const [warehouses, setWarehouses] = useState<any[]>([])
+  const [warehouseInventory, setWarehouseInventory] = useState<any[]>([])
+  const [showInventoryPicker, setShowInventoryPicker] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) router.push('/login')
     })
-    supabase.from('warehouses').select('id, name, address').eq('status', 'active').then(({ data }) => setWarehouses(data || []))
+    supabase.from('warehouses').select('id, name, address').then(({ data }) => setWarehouses(data || []))
   }, [router])
 
   function update(key: string, value: string) {
@@ -88,7 +90,36 @@ export default function NewJobPage() {
       }
 
       const job = await createJobOrder(jobData as any, session.user.id)
-      toast.success(`Job order ${job.job_number} created!`)
+
+      // Auto-log warehouse movements for inventory items
+      const inventoryItems = items.filter((i: any) => i.from_inventory && i.inventory_id)
+      if (inventoryItems.length > 0 && form.origin_warehouse_id) {
+        for (const item of inventoryItems as any[]) {
+          // Log movement as pending (will be completed when job is delivered)
+          await supabase.from('warehouse_movements').insert({
+            job_order_id: job.id,
+            from_warehouse_id: form.origin_warehouse_id,
+            to_warehouse_id: form.destination_warehouse_id || null,
+            item_name: item.item_name,
+            quantity: item.quantity,
+            cbm: (item.cbm_per_item || 0) * item.quantity,
+            movement_type: form.destination_warehouse_id ? 'transfer' : 'outbound',
+            status: 'pending',
+            moved_by: session.user.id,
+          })
+          // Reserve stock — reduce available quantity
+          const { data: inv } = await supabase.from('warehouse_inventory').select('quantity').eq('id', item.inventory_id).single()
+          if (inv) {
+            await supabase.from('warehouse_inventory').update({
+              quantity: Math.max(0, inv.quantity - item.quantity),
+              last_updated: new Date().toISOString(),
+            }).eq('id', item.inventory_id)
+          }
+        }
+        toast.success(`Job order ${job.job_number} created! ${inventoryItems.length} item(s) reserved from warehouse.`)
+      } else {
+        toast.success(`Job order ${job.job_number} created!`)
+      }
       router.push(`/jobs/${job.id}`)
     } catch (err: any) {
       toast.error(err.message || 'Failed to create job order')
@@ -125,6 +156,12 @@ export default function NewJobPage() {
                 const wh = warehouses.find((w: any) => w.id === e.target.value)
                 update('origin_warehouse_id', e.target.value)
                 if (wh) update('pickup_location', wh.address)
+                // Load inventory for this warehouse
+                if (e.target.value) {
+                  supabase.from('warehouse_inventory').select('*').eq('warehouse_id', e.target.value).gt('quantity', 0).then(({ data }) => setWarehouseInventory(data || []))
+                } else {
+                  setWarehouseInventory([])
+                }
               }}>
               <option value="">— Select warehouse or type manually below —</option>
               {warehouses.map((w: any) => (
@@ -217,26 +254,76 @@ export default function NewJobPage() {
               <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
                 Shipment Items {items.length > 0 && `(${items.length})`}
               </span>
-              <button type="button" onClick={addItem} className="btn btn-sm btn-secondary flex items-center gap-1">
-                <Plus size={12} /> Add Item
-              </button>
+              <div className="flex gap-2">
+                {warehouseInventory.length > 0 && (
+                  <button type="button" onClick={() => setShowInventoryPicker(true)}
+                    className="btn btn-sm flex items-center gap-1"
+                    style={{ background: 'rgba(96,165,250,0.15)', border: '1px solid #60a5fa', color: '#60a5fa' }}>
+                    🏭 From Warehouse
+                  </button>
+                )}
+                <button type="button" onClick={addItem} className="btn btn-sm btn-secondary flex items-center gap-1">
+                  <Plus size={12} /> Add Manual
+                </button>
+              </div>
             </div>
 
             {items.length === 0 ? (
-              <div className="text-center text-text-muted text-xs py-4">No items added yet. Click "+ Add Item"</div>
+              <div className="text-center text-text-muted text-xs py-4">
+                {form.origin_warehouse_id ? 'Click "🏭 From Warehouse" to select items from inventory' : 'Select an origin warehouse above or click "+ Add Manual"'}
+              </div>
             ) : (
               <div className="space-y-2">
                 {items.map((item, i) => (
                   <div key={i} className="bg-bg-secondary border border-border rounded p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold text-text-primary">{item.item_name}</div>
+                        {(item as any).from_inventory && (
+                          <div className="text-xs" style={{ color: '#60a5fa' }}>🏭 From warehouse inventory</div>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => removeItem(i)}
+                        className="p-1 rounded hover:bg-danger-bg ml-2">
+                        <Trash2 size={13} className="text-danger" />
+                      </button>
+                    </div>
                     <div className="grid grid-cols-3 gap-2 mb-2">
-                      <input className="form-input text-xs col-span-3" placeholder="Item name (e.g. Refrigerator - LG 2-door)"
+                      <input className="form-input text-xs col-span-2" placeholder="Item name"
                         value={item.item_name} onChange={e => updateItem(i, 'item_name', e.target.value)} />
-                      <input className="form-input text-xs" type="number" placeholder="Qty"
-                        value={item.quantity} onChange={e => updateItem(i, 'quantity', parseInt(e.target.value) || 1)} />
-                      <input className="form-input text-xs" type="number" step="0.01" placeholder="CBM/unit"
-                        value={item.cbm_per_item || ''} onChange={e => updateItem(i, 'cbm_per_item', parseFloat(e.target.value) || 0)} />
-                      <div className="text-xs text-text-muted flex items-center">
-                        = {((item.cbm_per_item || 0) * item.quantity).toFixed(3)} CBM
+                      <div className="bg-bg-tertiary rounded-md flex items-center justify-center text-xs font-bold text-info px-2">
+                        {((item.cbm_per_item || 0) * item.quantity).toFixed(3)} CBM
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mb-2">
+                      <div>
+                        <div className="text-xs text-text-muted mb-1">Quantity</div>
+                        <input className="form-input text-xs" type="number" min="1"
+                          max={(item as any).max_quantity || undefined}
+                          value={item.quantity}
+                          onChange={e => {
+                            const val = parseInt(e.target.value) || 1
+                            const max = (item as any).max_quantity
+                            if (max && val > max) { toast.error(`Only ${max} units available in warehouse`); return }
+                            updateItem(i, 'quantity', val)
+                          }} />
+                        {(item as any).max_quantity && (
+                          <div className="text-xs text-text-muted mt-0.5">Max: {(item as any).max_quantity}</div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-xs text-text-muted mb-1">CBM/unit</div>
+                        <input className="form-input text-xs" type="number" step="0.001"
+                          value={item.cbm_per_item || ''}
+                          readOnly={(item as any).from_inventory}
+                          style={(item as any).from_inventory ? { opacity: 0.7 } : {}}
+                          onChange={e => updateItem(i, 'cbm_per_item', parseFloat(e.target.value) || 0)} />
+                      </div>
+                      <div>
+                        <div className="text-xs text-text-muted mb-1">Unit</div>
+                        <input className="form-input text-xs" placeholder="pcs"
+                          value={(item as any).unit || 'pcs'}
+                          onChange={e => updateItem(i, 'unit', e.target.value)} />
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
@@ -329,6 +416,84 @@ export default function NewJobPage() {
           </button>
         </div>
       </div>
+
+      {/* Warehouse Inventory Picker Modal */}
+      {showInventoryPicker && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center">
+          <div className="bg-bg-secondary w-full md:max-w-lg rounded-t-2xl md:rounded-2xl max-h-[80vh] overflow-y-auto scrollbar-hide">
+            <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1 md:hidden" />
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-bg-secondary z-10">
+              <div>
+                <h2 className="font-heading text-base font-bold">🏭 Select from Warehouse Inventory</h2>
+                <p className="text-xs text-text-muted mt-0.5">Tap items to add them to this job order</p>
+              </div>
+              <button onClick={() => setShowInventoryPicker(false)}
+                style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: '16px' }}>
+                ✕
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              {warehouseInventory.length === 0 ? (
+                <div className="text-center py-8 text-text-muted text-sm">No items in warehouse inventory</div>
+              ) : (
+                warehouseInventory.map((inv: any) => {
+                  const alreadyAdded = items.find(i => (i as any).inventory_id === inv.id)
+                  return (
+                    <div key={inv.id}
+                      onClick={() => {
+                        if (alreadyAdded) {
+                          // Remove if already added
+                          setItems(prev => prev.filter(i => (i as any).inventory_id !== inv.id))
+                        } else {
+                          // Add to items
+                          setItems(prev => [...prev, {
+                            item_name: inv.item_name,
+                            quantity: 1,
+                            cbm_per_item: inv.cbm_per_unit || 0,
+                            is_fragile: false,
+                            requires_special_handling: false,
+                            remarks: '',
+                            inventory_id: inv.id,
+                            from_inventory: true,
+                            max_quantity: inv.quantity,
+                            unit: inv.unit || 'pcs',
+                            warehouse_id: inv.warehouse_id,
+                          } as any])
+                        }
+                      }}
+                      className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all"
+                      style={{
+                        background: alreadyAdded ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)',
+                        border: alreadyAdded ? '1.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.08)',
+                      }}>
+                      <div className="flex-1">
+                        <div className="text-sm font-semibold text-text-primary">{inv.item_name}</div>
+                        <div className="flex gap-3 mt-0.5">
+                          <span className="text-xs text-text-muted">Stock: <strong className="text-text-secondary">{inv.quantity} {inv.unit}</strong></span>
+                          {inv.cbm_per_unit > 0 && <span className="text-xs text-info">{inv.cbm_per_unit} CBM/unit</span>}
+                          {inv.sku && <span className="text-xs text-text-muted">SKU: {inv.sku}</span>}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 ml-3">
+                        {alreadyAdded ? (
+                          <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: '#60a5fa', color: '#000' }}>✓ Added</span>
+                        ) : (
+                          <span className="text-xs font-bold px-2 py-1 rounded-full bg-bg-tertiary text-text-muted">+ Add</span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              <div className="pt-2">
+                <button onClick={() => setShowInventoryPicker(false)} className="btn btn-primary btn-full">
+                  Done — {items.filter((i: any) => i.from_inventory).length} items selected
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
