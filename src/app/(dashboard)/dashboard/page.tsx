@@ -177,7 +177,7 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <span className={`status-badge ${getJobStatusColor(job.status)}`}>
-                    {JOB_STATUS_LABELS[job.status]}
+                    {(JOB_STATUS_LABELS as any)[job.status]}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-text-muted mb-2">
