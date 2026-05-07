@@ -199,6 +199,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
 }) {
   const [saving, setSaving] = useState(false)
   const [completedJobs, setCompletedJobs] = useState<any[]>([])
+  const [pricingMode, setPricingMode] = useState<'fixed' | 'per_cbm'>('fixed')
   const [form, setForm] = useState<any>({
     driver_id: '', job_order_id: '', delivery_date: '',
     pickup_location: '', dropoff_location: '', truck_type_label: '',
