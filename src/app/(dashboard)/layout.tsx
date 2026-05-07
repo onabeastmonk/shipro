@@ -12,21 +12,21 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/jobs', label: 'Jobs', icon: ClipboardList },
-  { href: '/tracking', label: 'Tracking', icon: MapPin },
-  { href: '/fleet', label: 'Fleet', icon: Truck },
-  { href: '/payroll', label: 'Payroll', icon: DollarSign },
-  { href: '/drivers', label: 'My Drivers', icon: Users },
-  { href: '/warehouse', label: 'Warehouse', icon: Warehouse },
-  { href: '/verification', label: 'Verification', icon: ShieldCheck },
-  { href: '/owner-profile', label: 'My Team', icon: UserCheck },
-  { href: '/driver-application', label: 'My Application', icon: UserCheck },
-  { href: '/chat', label: 'Messages', icon: MessageCircle },
-  { href: '/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
-  { href: '/emergency', label: 'Emergency', icon: Phone },
+const ALL_NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['all'] },
+  { href: '/jobs', label: 'Jobs', icon: ClipboardList, roles: ['all'] },
+  { href: '/tracking', label: 'Tracking', icon: MapPin, roles: ['all'] },
+  { href: '/fleet', label: 'Fleet', icon: Truck, roles: ['admin', 'fleet_manager', 'truck_owner'] },
+  { href: '/payroll', label: 'Payroll', icon: DollarSign, roles: ['admin', 'fleet_manager'] },
+  { href: '/warehouse', label: 'Warehouse', icon: Warehouse, roles: ['admin', 'fleet_manager', 'warehouse_manager'] },
+  { href: '/verification', label: 'Verification', icon: ShieldCheck, roles: ['admin', 'fleet_manager'] },
+  { href: '/owner-profile', label: 'My Team', icon: UserCheck, roles: ['truck_owner'] },
+  { href: '/drivers', label: 'My Drivers', icon: Users, roles: ['truck_owner'] },
+  { href: '/driver-application', label: 'My Application', icon: UserCheck, roles: ['driver'] },
+  { href: '/chat', label: 'Messages', icon: MessageCircle, roles: ['all'] },
+  { href: '/calendar', label: 'Calendar', icon: Calendar, roles: ['all'] },
+  { href: '/incidents', label: 'Incidents', icon: AlertTriangle, roles: ['all'] },
+  { href: '/emergency', label: 'Emergency', icon: Phone, roles: ['all'] },
 ]
 
 const BOTTOM_NAV_PRIMARY = [
@@ -160,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
         <nav className="flex-1 p-3 overflow-y-auto">
-          {NAV_ITEMS.map(item => {
+          {ALL_NAV_ITEMS.filter(item => item.roles.includes('all') || item.roles.includes(user?.role || '')).map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             const badge = item.href === '/chat' ? unreadMessages : item.href === '/emergency' ? activeEmergencies : 0
             return (
