@@ -46,11 +46,11 @@ export default function WarehousePage() {
   }, [router])
 
   async function loadWarehouses() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('warehouses')
       .select('*, inventory:warehouse_inventory(id, quantity, cbm_per_unit), movements:warehouse_movements(id, status)')
-      .eq('status', 'active')
       .order('created_at', { ascending: false })
+    if (error) console.error('Warehouse load error:', error)
     setWarehouses(data || [])
     setLoading(false)
   }
