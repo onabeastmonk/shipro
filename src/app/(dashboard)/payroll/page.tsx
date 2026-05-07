@@ -279,7 +279,7 @@ function NewPayslipModal({ userId, onClose, onSave }: {
             )}
           </div>
 
-          {form.job_order_id && (
+          {form.job_order_id && selectedJob && (
             <div className="bg-bg-tertiary border border-border rounded-lg p-3 space-y-1.5">
               <div className="text-xs text-text-muted font-bold uppercase tracking-wide mb-2">Job Details</div>
               <div className="flex justify-between text-xs"><span className="text-text-muted">Date</span><span className="text-text-primary font-medium">{form.delivery_date}</span></div>
@@ -287,20 +287,122 @@ function NewPayslipModal({ userId, onClose, onSave }: {
               <div className="flex justify-between text-xs"><span className="text-text-muted">To</span><span className="text-text-primary font-medium text-right max-w-[60%] truncate">{form.dropoff_location}</span></div>
               <div className="flex justify-between text-xs"><span className="text-text-muted">Truck</span><span className="text-text-primary font-medium">{form.truck_type_label || '—'}</span></div>
               <div className="flex justify-between text-xs"><span className="text-text-muted">Items Delivered</span><span className="font-bold" style={{ color: '#60a5fa' }}>{form.items_count} items</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Target CBM</span><span className="font-bold text-text-primary">{form.target_cbm} CBM</span></div>
+            </div>
+          )}
+
+          {/* CBM Section */}
+          {form.job_order_id && (
+            <div className="bg-bg-secondary border border-border rounded-lg p-4 space-y-3">
+              <div className="text-xs font-bold text-text-muted uppercase tracking-widest text-center mb-1">📦 CBM TRACKING</div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="form-label">Target CBM (from job order)</label>
+                  <input className="form-input opacity-60" type="number" step="0.001" readOnly
+                    value={form.target_cbm || ''} />
+                </div>
+                <div>
+                  <label className="form-label">Actual CBM Transported *</label>
+                  <input className="form-input" type="number" step="0.001" placeholder="0.000"
+                    value={form.actual_cbm || ''}
+                    onChange={e => update('actual_cbm', parseFloat(e.target.value) || 0)} />
+                </div>
+              </div>
+
+              {/* CBM Progress bar */}
+              {form.target_cbm > 0 && (
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="text-text-muted">CBM Completion</span>
+                    <span className={`font-bold ${cbmPercent >= 100 ? 'text-success' : cbmPercent >= 80 ? 'text-warning' : 'text-danger'}`}>
+                      {cbmPercent}%
+                    </span>
+                  </div>
+                  <div className="h-2 bg-bg-tertiary rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(100, cbmPercent)}%`,
+                        background: cbmPercent >= 100 ? '#22c55e' : cbmPercent >= 80 ? '#f59e0b' : '#ef4444'
+                      }} />
+                  </div>
+                  {cbmShortfall > 0 && (
+                    <div className="text-xs text-warning mt-1">
+                      ⚠️ Shortfall: {cbmShortfall.toFixed(3)} CBM not transported
+                    </div>
+                  )}
+                  {form.actual_cbm > form.target_cbm && (
+                    <div className="text-xs text-success mt-1">
+                      ✓ Extra: {(form.actual_cbm - form.target_cbm).toFixed(3)} CBM above target
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           <div className="h-px bg-border" />
-          <div className="text-xs font-bold text-text-muted uppercase tracking-widest text-center">RATE BREAKDOWN</div>
+          <div className="text-xs font-bold text-text-muted uppercase tracking-widest text-center">💰 PRICING MODE</div>
 
+          {/* Pricing Mode Toggle */}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setPricingMode('fixed')}
+              className="p-3 rounded-lg border text-left transition-all"
+              style={{
+                border: pricingMode === 'fixed' ? '2px solid #60a5fa' : '1px solid rgba(255,255,255,0.08)',
+                background: pricingMode === 'fixed' ? 'rgba(96,165,250,0.1)' : 'transparent',
+              }}>
+              <div className="text-sm font-bold" style={{ color: pricingMode === 'fixed' ? '#60a5fa' : '#a0a0a0' }}>Fixed Rate</div>
+              <div className="text-xs text-text-muted mt-0.5">Set a flat amount regardless of CBM</div>
+            </button>
+            <button type="button" onClick={() => setPricingMode('per_cbm')}
+              className="p-3 rounded-lg border text-left transition-all"
+              style={{
+                border: pricingMode === 'per_cbm' ? '2px solid #22c55e' : '1px solid rgba(255,255,255,0.08)',
+                background: pricingMode === 'per_cbm' ? 'rgba(34,197,94,0.1)' : 'transparent',
+              }}>
+              <div className="text-sm font-bold" style={{ color: pricingMode === 'per_cbm' ? '#22c55e' : '#a0a0a0' }}>Per CBM</div>
+              <div className="text-xs text-text-muted mt-0.5">Rate × actual CBM transported</div>
+            </button>
+          </div>
+
+          {pricingMode === 'fixed' ? (
+            <div>
+              <label className="form-label">Base Rate (₱)</label>
+              <input className="form-input" type="number" step="0.01" placeholder="0.00"
+                value={form.base_rate || ''}
+                onChange={e => update('base_rate', parseFloat(e.target.value) || 0)} />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="form-label">Rate per CBM (₱/CBM)</label>
+                <input className="form-input" type="number" step="0.01" placeholder="e.g. 500"
+                  value={form.rate_per_cbm || ''}
+                  onChange={e => update('rate_per_cbm', parseFloat(e.target.value) || 0)} />
+              </div>
+              <div className="bg-bg-tertiary rounded-lg p-3">
+                <div className="text-xs text-text-muted mb-1">Calculation Preview</div>
+                <div className="text-sm">
+                  ₱{(form.rate_per_cbm || 0).toLocaleString()} × {form.actual_cbm || 0} CBM = <strong className="text-text-primary">₱{basePay.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong>
+                </div>
+                {cbmShortfall > 0 && (
+                  <div className="text-xs text-warning mt-1">
+                    Deducted: ₱{((form.rate_per_cbm || 0) * cbmShortfall).toLocaleString('en-PH', { minimumFractionDigits: 2 })} for {cbmShortfall.toFixed(3)} CBM shortfall
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="text-xs font-bold text-text-muted uppercase tracking-widest text-center">OTHER CHARGES</div>
           <div className="grid grid-cols-2 gap-3">
             {[
-              ['base_rate', 'Base Rate (₱)'],
               ['additional_charges', 'Additional Charges (₱)'],
               ['fuel_allowance', 'Fuel Allowance (₱)'],
               ['toll_fee', 'Toll Fee (₱)'],
               ['parking_fee', 'Parking Fee (₱)'],
-              ['deductions', 'Deductions (₱)'],
+              ['deductions', 'Other Deductions (₱)'],
             ].map(([key, label]) => (
               <div key={key}>
                 <label className="form-label">{label}</label>
@@ -311,9 +413,32 @@ function NewPayslipModal({ userId, onClose, onSave }: {
             ))}
           </div>
 
-          <div className="bg-bg-tertiary rounded-lg p-4 text-center">
-            <div className="text-xs text-text-muted mb-1">NET TOTAL PAYOUT</div>
-            <div className="font-heading text-3xl font-bold">₱{Math.max(0, total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+          {/* Total breakdown */}
+          <div className="bg-bg-tertiary rounded-lg p-4 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-text-muted">{pricingMode === 'per_cbm' ? `Base (${form.actual_cbm} CBM × ₱${form.rate_per_cbm})` : 'Base Rate'}</span>
+              <span className="font-semibold">₱{basePay.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+            </div>
+            {(form.additional_charges > 0 || form.fuel_allowance > 0 || form.toll_fee > 0 || form.parking_fee > 0) && (
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">+ Other Charges</span>
+                <span className="font-semibold text-success">+₱{((form.additional_charges || 0) + (form.fuel_allowance || 0) + (form.toll_fee || 0) + (form.parking_fee || 0)).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            {form.deductions > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-text-muted">- Deductions</span>
+                <span className="font-semibold text-danger">-₱{form.deductions.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+              </div>
+            )}
+            <div className="h-px bg-border my-1" />
+            <div className="text-center pt-1">
+              <div className="text-xs text-text-muted mb-1">NET TOTAL PAYOUT</div>
+              <div className="font-heading text-3xl font-bold">₱{Math.max(0, total).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</div>
+              {pricingMode === 'per_cbm' && cbmShortfall > 0 && (
+                <div className="text-xs text-warning mt-1">CBM shortfall deducted from pay</div>
+              )}
+            </div>
           </div>
 
           <div>
