@@ -1,340 +1,309 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
-import { formatDate } from '@/lib/utils'
-import { CheckCircle, XCircle, Users, Truck, Building } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import ContactCard from '@/components/ContactCard'
+import { registerTruck, uploadTruckDocument } from '@/lib/api'
+import { TRUCK_TYPE_LABELS, DOCUMENT_TYPES, type TruckType } from '@/types'
+import { ChevronLeft, Upload, Check } from 'lucide-react'
 
-export default function VerificationPage() {
+const REQUIRED_DOCS = ['OR/CR', 'LTFRB Permit', 'Insurance', 'Vehicle Photos']
+const OPTIONAL_DOCS: string[] = []
+
+export default function RegisterTruckPage() {
   const router = useRouter()
-  const [userId, setUserId] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [tab, setTab] = useState<'owners' | 'drivers' | 'trucks'>('owners')
+  const [loading, setLoading] = useState(false)
+  const [truckId, setTruckId] = useState<string | null>(null)
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, File>>({})
+  const [docExpiry, setDocExpiry] = useState<Record<string, string>>({})
+
   const [truckOwners, setTruckOwners] = useState<any[]>([])
-  const [driverApps, setDriverApps] = useState<any[]>([])
-  const [trucks, setTrucks] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [selectedOwnerId, setSelectedOwnerId] = useState<string>('')
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [form, setForm] = useState({
+    owner_name: '', business_name: '', contact_person: '',
+    contact_number: '', email: '',
+    plate_number: '', truck_type: '' as TruckType | '',
+    truck_type_label: '', cbm_capacity: '', load_capacity_kg: '', ltfrb_number: '',
+  })
 
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
+      if (!session) return
       setUserId(session.user.id)
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      if (!['admin', 'fleet_manager'].includes(profile?.role)) { router.push('/dashboard'); return }
-      setUserRole(profile?.role)
+      const { data: profile } = await supabase.from('profiles').select('role, full_name, company_name, contact_number, email').eq('id', session.user.id).single()
+      setUserRole(profile?.role || null)
 
-      await loadAll()
+      if (profile?.role === 'truck_owner') {
+        // Auto-fill from own profile
+        setSelectedOwnerId(session.user.id)
+        setForm(f => ({
+          ...f,
+          owner_name: profile.full_name || '',
+          business_name: profile.company_name || '',
+          contact_person: profile.full_name || '',
+          contact_number: profile.contact_number || '',
+          email: profile.email || '',
+        }))
+      } else if (profile?.role === 'admin' || profile?.role === 'fleet_manager') {
+        // Load all truck owners for selection
+        const { data: owners } = await supabase.from('profiles').select('id, full_name, company_name, contact_number, email').eq('role', 'truck_owner').order('full_name')
+        setTruckOwners(owners || [])
+      }
     }
     load()
-  }, [router])
+  }, [])
 
-  async function loadAll() {
-    const [ownersRes, appsRes, trucksRes] = await Promise.all([
-      supabase.from('profiles')
-        .select('*, trucks:trucks(id, plate_number, verification_status), drivers:profiles!owner_id(id, full_name, is_verified)')
-        .eq('role', 'truck_owner')
-        .order('created_at', { ascending: false }),
-      supabase.from('driver_applications')
-        .select('*, driver:profiles!driver_id(id, full_name, contact_number, email, license_number), truck_owner:profiles!truck_owner_id(full_name, company_name)')
-        .eq('status', 'owner_approved')
-        .order('submitted_at', { ascending: false }),
-      supabase.from('trucks')
-        .select('*, owner:profiles!owner_id(full_name, contact_number)')
-        .eq('verification_status', 'pending')
-        .order('created_at', { ascending: false }),
-    ])
-
-    setTruckOwners(ownersRes.data || [])
-    setDriverApps(appsRes.data || [])
-    setTrucks(trucksRes.data || [])
-    setLoading(false)
-  }
-
-  async function verifyOwner(ownerId: string, verified: boolean) {
-    await supabase.from('profiles').update({
-      is_verified: verified,
-      verified_by: userId,
-      verified_at: new Date().toISOString(),
-    }).eq('id', ownerId)
-
-    await supabase.from('notifications').insert({
-      user_id: ownerId,
-      type: 'general',
-      title: verified ? '✅ Account Verified!' : '❌ Verification Rejected',
-      body: verified ? 'Your truck owner account has been verified by the fleet manager.' : 'Your verification was not approved. Please contact the fleet manager.',
+  function update(key: string, value: string) {
+    setForm(f => {
+      const next = { ...f, [key]: value }
+      if (key === 'truck_type') next.truck_type_label = TRUCK_TYPE_LABELS[value as TruckType] || ''
+      return next
     })
-
-    toast.success(verified ? 'Truck owner verified!' : 'Owner rejected')
-    await loadAll()
   }
 
-  async function approveDriverApp(appId: string, driverId: string, approve: boolean, remarks?: string) {
-    const newStatus = approve ? 'fleet_approved' : 'rejected'
-    await supabase.from('driver_applications').update({
-      status: newStatus,
-      fleet_remarks: remarks || null,
-      fleet_reviewed_at: new Date().toISOString(),
-      reviewed_by: userId,
-    }).eq('id', appId)
+  function handleDocFile(docType: string, file: File) {
+    setUploadedDocs(prev => ({ ...prev, [docType]: file }))
+  }
 
-    if (approve) {
-      await supabase.from('profiles').update({ is_verified: true, verified_by: userId, verified_at: new Date().toISOString() }).eq('id', driverId)
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    const required = ['owner_name', 'contact_person', 'contact_number', 'email', 'plate_number', 'truck_type', 'cbm_capacity', 'load_capacity_kg']
+    for (const field of required) {
+      if (!form[field as keyof typeof form]) {
+        toast.error('Please fill in all required fields')
+        return
+      }
     }
 
-    await supabase.from('notifications').insert({
-      user_id: driverId,
-      type: 'application',
-      title: approve ? '✅ Driver Verified!' : '❌ Application Rejected',
-      body: approve ? 'Fleet manager has verified your driver account. You can now receive job assignments.' : `Application rejected by fleet manager. ${remarks || ''}`,
-    })
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
 
-    toast.success(approve ? 'Driver verified!' : 'Application rejected')
-    await loadAll()
+      // Step 1: Register the truck
+      toast.loading('Registering truck...', { id: 'register' })
+      const { data: truck, error: truckError } = await supabase
+        .from('trucks')
+        .insert({
+          owner_name: form.owner_name,
+          business_name: form.business_name || null,
+          contact_person: form.contact_person,
+          contact_number: form.contact_number,
+          email: form.email,
+          plate_number: form.plate_number,
+          truck_type: form.truck_type,
+          truck_type_label: TRUCK_TYPE_LABELS[form.truck_type as TruckType],
+          cbm_capacity: parseFloat(form.cbm_capacity),
+          load_capacity_kg: parseFloat(form.load_capacity_kg),
+          ltfrb_number: form.ltfrb_number || null,
+          owner_id: selectedOwnerId || session.user.id,
+          verification_status: 'pending',
+        })
+        .select()
+        .single()
+
+      if (truckError) throw new Error(truckError.message)
+
+      // Step 2: Upload documents one by one
+      const uploads = Object.entries(uploadedDocs)
+      if (uploads.length > 0) {
+        toast.loading(`Uploading ${uploads.length} document(s)...`, { id: 'register' })
+        for (const [docType, file] of uploads) {
+          try {
+            await uploadTruckDocument(truck.id, docType, file, docExpiry[docType])
+          } catch (docErr: any) {
+            console.error(`Failed to upload ${docType}:`, docErr)
+            // Don't block registration if document upload fails
+          }
+        }
+      }
+
+      toast.success('Truck registered! Pending admin review.', { id: 'register' })
+      router.push('/fleet')
+    } catch (err: any) {
+      toast.error(err.message || 'Registration failed', { id: 'register' })
+    } finally {
+      setLoading(false)
+    }
   }
-
-  async function verifyTruck(truckId: string, ownerId: string, approved: boolean) {
-    await supabase.from('trucks').update({
-      verification_status: approved ? 'approved' : 'rejected',
-    }).eq('id', truckId)
-
-    await supabase.from('notifications').insert({
-      user_id: ownerId,
-      type: 'general',
-      title: approved ? '✅ Truck Approved!' : '❌ Truck Rejected',
-      body: approved ? 'Your truck has been verified and approved.' : 'Your truck registration was rejected.',
-    })
-
-    toast.success(approved ? 'Truck approved!' : 'Truck rejected')
-    await loadAll()
-  }
-
-  const pendingOwners = truckOwners.filter(o => !o.is_verified)
-  const verifiedOwners = truckOwners.filter(o => o.is_verified)
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
-      <div className="mb-5">
-        <h1 className="font-heading text-2xl font-bold">Verification Center</h1>
-        <p className="text-text-muted text-sm mt-0.5">Verify truck owners, drivers and trucks</p>
+    <form onSubmit={handleSubmit} className="max-w-2xl mx-auto">
+      <div className="sticky top-0 bg-bg-secondary border-b border-border px-4 py-3 flex items-center gap-3 z-10">
+        <Link href="/fleet" className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors">
+          <ChevronLeft size={20} className="text-text-muted" />
+        </Link>
+        <h1 className="font-heading text-base font-semibold flex-1">Register Truck</h1>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center cursor-pointer" onClick={() => setTab('owners')}>
-          <div className="font-heading text-2xl font-bold text-warning">{pendingOwners.length}</div>
-          <div className="text-xs text-text-muted">Owners Pending</div>
-        </div>
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center cursor-pointer" onClick={() => setTab('drivers')}>
-          <div className="font-heading text-2xl font-bold text-info">{driverApps.length}</div>
-          <div className="text-xs text-text-muted">Drivers Pending</div>
-        </div>
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center cursor-pointer" onClick={() => setTab('trucks')}>
-          <div className="font-heading text-2xl font-bold text-warning">{trucks.length}</div>
-          <div className="text-xs text-text-muted">Trucks Pending</div>
-        </div>
-      </div>
+      <div className="p-4 space-y-6">
+        {/* OWNER */}
+        <Section title="TRUCK OWNER">
+          {/* Admin/Fleet Manager selects truck owner */}
+          {(userRole === 'admin' || userRole === 'fleet_manager') && truckOwners.length > 0 && (
+            <FormGroup label="Select Truck Owner *">
+              <select className="form-input" value={selectedOwnerId}
+                onChange={e => {
+                  const owner = truckOwners.find(o => o.id === e.target.value)
+                  setSelectedOwnerId(e.target.value)
+                  if (owner) {
+                    update('owner_name', owner.full_name || '')
+                    update('business_name', owner.company_name || '')
+                    update('contact_person', owner.full_name || '')
+                    update('contact_number', owner.contact_number || '')
+                    update('email', owner.email || '')
+                  }
+                }}>
+                <option value="">— Select truck owner —</option>
+                {truckOwners.map(o => (
+                  <option key={o.id} value={o.id}>{o.full_name} {o.company_name ? `· ${o.company_name}` : ''}</option>
+                ))}
+              </select>
+            </FormGroup>
+          )}
 
-      {/* Tabs */}
-      <div className="flex gap-2 mb-4">
-        {[
-          { key: 'owners', label: `Truck Owners (${truckOwners.length})` },
-          { key: 'drivers', label: `Driver Apps (${driverApps.length})` },
-          { key: 'trucks', label: `Trucks (${trucks.length})` },
-        ].map(t => (
-          <button key={t.key} onClick={() => setTab(t.key as any)}
-            className={cn('flex-1 py-2 rounded-lg text-xs font-semibold transition-all',
-              tab === t.key ? 'bg-brand text-bg-primary' : 'bg-bg-secondary border border-border text-text-secondary')}>
-            {t.label}
+          {/* Auto-filled owner info */}
+          {form.owner_name && (
+            <div className="bg-bg-tertiary rounded-lg p-3 space-y-1.5">
+              <div className="text-xs text-text-muted font-bold uppercase mb-1">Owner Details (Auto-filled)</div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Name</span><span className="font-semibold text-text-primary">{form.owner_name}</span></div>
+              {form.business_name && <div className="flex justify-between text-xs"><span className="text-text-muted">Business</span><span className="font-semibold text-text-primary">{form.business_name}</span></div>}
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Contact</span><span className="font-semibold text-text-primary">{form.contact_number}</span></div>
+              <div className="flex justify-between text-xs"><span className="text-text-muted">Email</span><span className="font-semibold text-text-primary">{form.email}</span></div>
+            </div>
+          )}
+
+          {/* Truck owners register their own truck - editable */}
+          {userRole === 'truck_owner' && (
+            <p className="text-xs text-text-muted">✓ Registering under your account: <strong>{form.owner_name}</strong></p>
+          )}
+        </Section>
+
+        {/* TRUCK */}
+        <Section title="TRUCK DETAILS">
+          <FormGroup label="Plate Number *">
+            <input className="form-input uppercase tracking-widest font-heading" placeholder="ABC 1234" required
+              value={form.plate_number}
+              onChange={e => update('plate_number', e.target.value.toUpperCase())} />
+          </FormGroup>
+          <FormGroup label="Truck Type *">
+            <select className="form-input" required value={form.truck_type} onChange={e => update('truck_type', e.target.value)}>
+              <option value="">— Select truck type —</option>
+              {Object.entries(TRUCK_TYPE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </FormGroup>
+          <div className="grid grid-cols-2 gap-3">
+            <FormGroup label="CBM Capacity *">
+              <input className="form-input" type="number" step="0.01" placeholder="0.00" required
+                value={form.cbm_capacity} onChange={e => update('cbm_capacity', e.target.value)} />
+            </FormGroup>
+            <FormGroup label="Load Capacity (kg) *">
+              <input className="form-input" type="number" placeholder="0" required
+                value={form.load_capacity_kg} onChange={e => update('load_capacity_kg', e.target.value)} />
+            </FormGroup>
+          </div>
+          <FormGroup label="LTFRB Franchise / CPC Number">
+            <input className="form-input" placeholder="CPC-2024-XXXXX"
+              value={form.ltfrb_number} onChange={e => update('ltfrb_number', e.target.value)} />
+          </FormGroup>
+        </Section>
+
+        {/* DOCUMENTS */}
+        <Section title="REQUIRED DOCUMENTS">
+          <p className="text-xs text-text-muted -mt-1 mb-2">Upload documents now or later. Admin will review all submissions.</p>
+          <div className="space-y-3">
+            {REQUIRED_DOCS.map(docType => (
+              <DocUploadRow
+                key={docType}
+                label={docType}
+                required
+                file={uploadedDocs[docType]}
+                expiry={docExpiry[docType]}
+                onFile={f => handleDocFile(docType, f)}
+                onExpiry={d => setDocExpiry(prev => ({ ...prev, [docType]: d }))}
+              />
+            ))}
+          </div>
+        </Section>
+
+        <Section title="OPTIONAL DOCUMENTS">
+          <div className="space-y-3">
+            {OPTIONAL_DOCS.map(docType => (
+              <DocUploadRow
+                key={docType}
+                label={`${docType} (optional)`}
+                file={uploadedDocs[docType]}
+                expiry={docExpiry[docType]}
+                onFile={f => handleDocFile(docType, f)}
+                onExpiry={d => setDocExpiry(prev => ({ ...prev, [docType]: d }))}
+              />
+            ))}
+          </div>
+        </Section>
+
+        {/* Submit */}
+        <div className="flex gap-3 pb-6">
+          <Link href="/fleet" className="btn btn-secondary flex-1 text-center justify-center">Cancel</Link>
+          <button type="submit" disabled={loading} className="btn btn-primary flex-1">
+            {loading ? 'Submitting...' : '✓ Submit for Review'}
           </button>
-        ))}
+        </div>
       </div>
+    </form>
+  )
+}
 
-      {loading ? Array(3).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-24 rounded-lg mb-3" />) : (
-        <>
-          {/* Truck Owners Tab */}
-          {tab === 'owners' && (
-            <div className="space-y-3">
-              {pendingOwners.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-warning uppercase mb-2">⏳ Awaiting Verification</div>
-                  {pendingOwners.map(owner => (
-                    <OwnerCard key={owner.id} owner={owner}
-                      onVerify={() => verifyOwner(owner.id, true)}
-                      onReject={() => verifyOwner(owner.id, false)} />
-                  ))}
-                </div>
-              )}
-              {verifiedOwners.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-success uppercase mb-2">✅ Verified Owners</div>
-                  {verifiedOwners.map(owner => (
-                    <OwnerCard key={owner.id} owner={owner} verified />
-                  ))}
-                </div>
-              )}
-              {truckOwners.length === 0 && (
-                <div className="text-center py-10 text-text-muted text-sm">No truck owners registered yet</div>
-              )}
-            </div>
-          )}
-
-          {/* Driver Applications Tab */}
-          {tab === 'drivers' && (
-            <div className="space-y-3">
-              {driverApps.length === 0 ? (
-                <div className="text-center py-10 text-text-muted text-sm">
-                  <Users size={36} className="mx-auto mb-2 opacity-40" />
-                  No driver applications awaiting fleet approval
-                </div>
-              ) : driverApps.map(app => (
-                <DriverAppCard key={app.id} app={app}
-                  onApprove={(remarks: string) => approveDriverApp(app.id, app.driver_id, true, remarks)}
-                  onReject={(remarks: string) => approveDriverApp(app.id, app.driver_id, false, remarks)} />
-              ))}
-            </div>
-          )}
-
-          {/* Trucks Tab */}
-          {tab === 'trucks' && (
-            <div className="space-y-3">
-              {trucks.length === 0 ? (
-                <div className="text-center py-10 text-text-muted text-sm">
-                  <Truck size={36} className="mx-auto mb-2 opacity-40" />
-                  No trucks pending verification
-                </div>
-              ) : trucks.map(truck => (
-                <div key={truck.id} className="bg-bg-secondary border border-border rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <div className="font-bold">{truck.plate_number}</div>
-                      <div className="text-xs text-text-muted">{truck.truck_type_label} · {truck.cbm_capacity} CBM</div>
-                      <div className="text-xs text-text-muted">Owner: {truck.owner?.full_name}</div>
-                    </div>
-                    <span className="status-badge bg-warning-bg text-warning border-warning-border">Pending</span>
-                  </div>
-                  <ContactCard name={truck.owner?.full_name} contactNumber={truck.owner?.contact_number} compact label="Truck Owner" />
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => verifyTruck(truck.id, truck.owner_id, false)} className="btn btn-sm btn-danger flex-1">✗ Reject</button>
-                    <button onClick={() => verifyTruck(truck.id, truck.owner_id, true)} className="btn btn-sm btn-success flex-1">✓ Approve</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
+function DocUploadRow({ label, file, expiry, required, onFile, onExpiry }: {
+  label: string; file?: File; expiry?: string; required?: boolean
+  onFile: (f: File) => void; onExpiry: (d: string) => void
+}) {
+  return (
+    <div className="bg-bg-tertiary border border-border rounded-md p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-sm font-medium text-text-primary">{label}</span>
+        {file && <Check size={14} className="text-success" />}
+      </div>
+      <div className="flex gap-2">
+        <label className="btn btn-sm btn-outline flex-1 cursor-pointer text-center">
+          <Upload size={12} />
+          {file ? file.name.substring(0, 20) + (file.name.length > 20 ? '...' : '') : 'Choose file'}
+          <input type="file" accept="image/*,application/pdf" className="hidden"
+            onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
+        </label>
+        <input className="form-input flex-1 text-xs" type="date"
+          placeholder="Expiry date" value={expiry || ''}
+          onChange={e => onExpiry(e.target.value)}
+          style={{ maxWidth: '130px' }} />
+      </div>
     </div>
   )
 }
 
-function OwnerCard({ owner, verified, onVerify, onReject }: any) {
-  const [expanded, setExpanded] = useState(false)
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-bg-secondary border border-border rounded-lg overflow-hidden mb-2">
-      <div className="p-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center font-bold text-text-secondary">
-              {owner.full_name?.charAt(0)}
-            </div>
-            <div>
-              <div className="font-semibold text-sm flex items-center gap-2">
-                {owner.full_name}
-                {owner.is_verified && <span className="text-xs text-success">✓</span>}
-              </div>
-              <div className="text-xs text-text-muted">{owner.company_name || 'Individual'} · {owner.contact_number}</div>
-              <div className="text-xs text-text-muted">🚛 {owner.trucks?.length || 0} trucks · 👤 {owner.drivers?.length || 0} drivers</div>
-            </div>
-          </div>
-          <span className="text-xs text-text-muted">{expanded ? '▲' : '▼'}</span>
-        </div>
+    <div>
+      <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-3 flex items-center gap-2">
+        <div className="flex-1 h-px bg-border" />
+        {title}
+        <div className="flex-1 h-px bg-border" />
       </div>
-      {expanded && (
-        <div className="border-t border-border px-3 pb-3 pt-2 space-y-3">
-          <div className="flex gap-2">
-            {owner.business_permit_url && (
-              <a href={owner.business_permit_url} target="_blank" rel="noopener noreferrer"
-                className="text-xs px-2 py-1 rounded font-semibold"
-                style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
-                📋 Business Permit
-              </a>
-            )}
-            {owner.valid_id_url && (
-              <a href={owner.valid_id_url} target="_blank" rel="noopener noreferrer"
-                className="text-xs px-2 py-1 rounded font-semibold"
-                style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
-                🪪 Valid ID
-              </a>
-            )}
-          </div>
-          {!owner.business_permit_url && !owner.valid_id_url && (
-            <div className="text-xs text-warning">⚠️ No documents uploaded yet</div>
-          )}
-          {!verified && (
-            <div className="flex gap-2">
-              <button onClick={onReject} className="btn btn-sm btn-danger flex-1">✗ Reject</button>
-              <button onClick={onVerify} className="btn btn-sm btn-success flex-1">✓ Verify Owner</button>
-            </div>
-          )}
-          {verified && (
-            <div className="text-xs text-success font-semibold">✓ Already verified</div>
-          )}
-        </div>
-      )}
+      <div className="space-y-3">{children}</div>
     </div>
   )
 }
 
-function DriverAppCard({ app, onApprove, onReject }: any) {
-  const [expanded, setExpanded] = useState(false)
-  const [remarks, setRemarks] = useState('')
+function FormGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="bg-bg-secondary border border-info-border rounded-lg overflow-hidden">
-      <div className="p-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-semibold text-sm">{app.driver?.full_name}</div>
-            <div className="text-xs text-text-muted">Under: {app.truck_owner?.full_name}</div>
-            <div className="text-xs text-text-muted">Applied: {formatDate(app.submitted_at)}</div>
-          </div>
-          <span className="text-xs px-2 py-1 rounded-full font-bold" style={{ background: 'rgba(59,130,246,0.15)', color: '#60a5fa' }}>Owner Approved</span>
-        </div>
-      </div>
-      {expanded && (
-        <div className="border-t border-border px-3 pb-3 pt-2 space-y-3">
-          <div className="flex gap-2">
-            {app.driver_license_url && (
-              <a href={app.driver_license_url} target="_blank" rel="noopener noreferrer"
-                className="text-xs px-2 py-1 rounded font-semibold"
-                style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
-                🪪 License
-              </a>
-            )}
-            {app.med_cert_url && (
-              <a href={app.med_cert_url} target="_blank" rel="noopener noreferrer"
-                className="text-xs px-2 py-1 rounded font-semibold"
-                style={{ background: 'rgba(96,165,250,0.15)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.3)' }}>
-                🏥 Med Cert
-              </a>
-            )}
-          </div>
-          {app.license_number && <div className="text-xs text-text-muted">License #: {app.license_number}</div>}
-          {app.owner_remarks && <div className="text-xs text-text-muted bg-bg-tertiary p-2 rounded">Owner note: {app.owner_remarks}</div>}
-          <div>
-            <label className="form-label">Fleet Manager Remarks</label>
-            <input className="form-input text-sm" placeholder="Optional remarks..." value={remarks} onChange={e => setRemarks(e.target.value)} />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => onReject(remarks)} className="btn btn-sm btn-danger flex-1">✗ Reject</button>
-            <button onClick={() => onApprove(remarks)} className="btn btn-sm btn-success flex-1">✓ Verify Driver</button>
-          </div>
-        </div>
-      )}
+    <div>
+      <label className="form-label">{label}</label>
+      {children}
     </div>
   )
 }
