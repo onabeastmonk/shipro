@@ -10,7 +10,7 @@ import type { UserRole } from '@/types'
 const ROLES: { value: UserRole; label: string; icon: string; desc: string }[] = [
   { value: 'admin', label: 'Fleet Manager', icon: '🏢', desc: 'Full system access' },
   { value: 'driver', label: 'Driver / Trucker', icon: '🚛', desc: 'Jobs & deliveries' },
-  { value: 'warehouse', label: 'Warehouse', icon: '📦', desc: 'Dispatch & orders' },
+  { value: 'warehouse_manager', label: 'Warehouse Manager', icon: '🏭', desc: 'Manage warehouses & inventory' },
   { value: 'client', label: 'Client', icon: '👁️', desc: 'View tracking' },
 ]
 
