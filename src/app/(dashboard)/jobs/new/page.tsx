@@ -118,9 +118,38 @@ export default function NewJobPage() {
       <div className="p-4 space-y-6">
         {/* ROUTE */}
         <Section title="DELIVERY ROUTE">
-          <FormGroup label="Warehouse / Pickup Location *">
+          {/* Origin Warehouse */}
+          <FormGroup label="Origin Warehouse (optional)">
+            <select className="form-input mb-2" value={form.origin_warehouse_id}
+              onChange={e => {
+                const wh = warehouses.find((w: any) => w.id === e.target.value)
+                update('origin_warehouse_id', e.target.value)
+                if (wh) update('pickup_location', wh.address)
+              }}>
+              <option value="">— Select warehouse or type manually below —</option>
+              {warehouses.map((w: any) => (
+                <option key={w.id} value={w.id}>🏭 {w.name}</option>
+              ))}
+            </select>
+          </FormGroup>
+          <FormGroup label="Pickup Location *">
             <input className="form-input" placeholder="e.g. Pasig Warehouse, Ortigas Ave."
               value={form.pickup_location} onChange={e => update('pickup_location', e.target.value)} required />
+          </FormGroup>
+
+          {/* Destination Warehouse */}
+          <FormGroup label="Destination Warehouse (optional)">
+            <select className="form-input mb-2" value={form.destination_warehouse_id}
+              onChange={e => {
+                const wh = warehouses.find((w: any) => w.id === e.target.value)
+                update('destination_warehouse_id', e.target.value)
+                if (wh) update('dropoff_location', wh.address)
+              }}>
+              <option value="">— Select warehouse or type manually below —</option>
+              {warehouses.map((w: any) => (
+                <option key={w.id} value={w.id}>🏭 {w.name}</option>
+              ))}
+            </select>
           </FormGroup>
           <FormGroup label="Drop-off Location *">
             <input className="form-input" placeholder="e.g. SM Makati, Ayala Avenue"
