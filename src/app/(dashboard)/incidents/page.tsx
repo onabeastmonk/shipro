@@ -68,9 +68,9 @@ export default function IncidentsPage() {
       .select(`
         *,
         job_order:job_orders(
-          job_number, client_name, pickup_location, dropoff_location,
-          truck:trucks(plate_number, truck_type_label, owner_name, driver_name, driver_contact, cbm_capacity),
-          driver:profiles!assigned_driver_id(full_name, contact_number, email)
+          id, job_number, client_name, pickup_location, dropoff_location, assigned_driver_id,
+          truck:trucks(plate_number, truck_type_label, owner_name, driver_name, driver_contact, cbm_capacity, owner_id),
+          driver:profiles!assigned_driver_id(id, full_name, contact_number, email)
         ),
         reporter:profiles!reported_by(full_name, contact_number)
       `)

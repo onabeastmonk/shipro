@@ -70,7 +70,7 @@ export default function JobDetailPage() {
         .from('job_orders')
         .select(`
           *,
-          truck:trucks(id, plate_number, truck_type_label, driver_name, owner_name, contact_number),
+          truck:trucks(id, plate_number, truck_type_label, driver_name, owner_name, contact_number, owner_id),
           driver:profiles!assigned_driver_id(id, full_name, contact_number, email),
           shipment_items(*),
           status_logs:delivery_status_logs(*, logged_by_profile:profiles!logged_by(full_name)),
@@ -429,23 +429,14 @@ export default function JobDetailPage() {
                 <div className="text-xs text-text-muted">{job.truck.truck_type_label}</div>
               </div>
             </div>
-            {job.driver && (
-              <ContactCard
-                userId={job.assigned_driver_id}
-                name={(job.driver as any).full_name}
-                role="truck_owner"
-                contactNumber={(job.driver as any).contact_number}
-                email={(job.driver as any).email}
-                label="Truck Owner / Driver"
-              />
-            )}
-            {!job.driver && job.truck.owner_name && (
-              <ContactCard
-                name={job.truck.owner_name}
-                contactNumber={job.truck.contact_number}
-                label="Truck Owner"
-              />
-            )}
+            <ContactCard
+              userId={job.assigned_driver_id || (job.truck as any)?.owner_id}
+              name={(job.driver as any)?.full_name || job.truck.owner_name || job.truck.driver_name}
+              role="truck_owner"
+              contactNumber={(job.driver as any)?.contact_number || job.truck.contact_number}
+              email={(job.driver as any)?.email}
+              label="Truck Owner / Driver"
+            />
           </div>
         )}
 

@@ -26,7 +26,7 @@ export default function PayrollPage() {
     try {
       const { data, error } = await supabase
         .from('payslips')
-        .select('*, driver:profiles!driver_id(full_name, email), job_order:job_orders(job_number)')
+        .select('*, driver:profiles!driver_id(id, full_name, email, contact_number), job_order:job_orders(job_number)')
         .order('created_at', { ascending: false })
       if (!error) setPayslips((data || []) as any)
     } catch { } finally { setLoading(false) }
