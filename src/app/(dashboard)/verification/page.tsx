@@ -193,8 +193,8 @@ export default function VerificationPage() {
                 </div>
               ) : driverApps.map(app => (
                 <DriverAppCard key={app.id} app={app}
-                  onApprove={(remarks) => approveDriverApp(app.id, app.driver_id, true, remarks)}
-                  onReject={(remarks) => approveDriverApp(app.id, app.driver_id, false, remarks)} />
+                  onApprove={(remarks: string) => approveDriverApp(app.id, app.driver_id, true, remarks)}
+                  onReject={(remarks: string) => approveDriverApp(app.id, app.driver_id, false, remarks)} />
               ))}
             </div>
           )}
