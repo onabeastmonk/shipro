@@ -214,12 +214,12 @@ export default function JobDetailPage() {
 
     // Get truck owner id
     const truckOwnerId = (job as any).truck?.owner_id || job.assigned_driver_id
-    const recipients = new Set<string>()
+    const recipientsMap: Record<string, boolean> = {}
 
-    if (truckOwnerId && truckOwnerId !== userId) recipients.add(truckOwnerId)
-    if (job.assigned_driver_id && job.assigned_driver_id !== userId) recipients.add(job.assigned_driver_id)
+    if (truckOwnerId && truckOwnerId !== userId) recipientsMap[truckOwnerId] = true
+    if (job.assigned_driver_id && job.assigned_driver_id !== userId) recipientsMap[job.assigned_driver_id] = true
 
-    for (const recipientId of recipients) {
+    for (const recipientId of Object.keys(recipientsMap)) {
       // Send chat message
       await supabase.from('messages').insert({
         sender_id: userId,
