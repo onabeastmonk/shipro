@@ -271,7 +271,13 @@ function JobCard({ job, userRole, userId, onShowMap }: {
             </div>
             <div className="text-right">
               <div className="font-heading text-sm font-bold text-text-primary">
-                {job.total_rate ? formatCurrency(job.total_rate) : '—'}
+                {job.total_rate
+                  ? formatCurrency(job.total_rate)
+                  : (job as any).rate_per_cbm
+                  ? `₱${Number((job as any).rate_per_cbm).toLocaleString()}/CBM`
+                  : (job as any).base_rate
+                  ? formatCurrency((job as any).base_rate)
+                  : '—'}
               </div>
               {totalCBM > 0 && (
                 <div style={{ background: 'rgba(59,130,246,0.15)', border: '1px solid rgba(59,130,246,0.3)', color: '#60a5fa', borderRadius: '6px', padding: '1px 7px', fontSize: '11px', fontWeight: 700, marginTop: '3px', display: 'inline-block' }}>
