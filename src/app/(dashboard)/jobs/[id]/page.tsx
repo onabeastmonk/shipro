@@ -57,9 +57,10 @@ export default function JobDetailPage() {
         if (trucks && trucks.length > 0) setSelectedTruckId(trucks[0].id)
 
         const { data: drivers } = await supabase
-          .from('truck_drivers')
-          .select('*')
+          .from('profiles')
+          .select('id, full_name, contact_number, email, is_verified')
           .eq('owner_id', session.user.id)
+          .eq('role', 'driver')
           .order('full_name')
         setMyDrivers(drivers || [])
       }
@@ -731,7 +732,7 @@ export default function JobDetailPage() {
                       <option value="">— Select driver (optional) —</option>
                       {myDrivers.map((d: any) => (
                         <option key={d.id} value={d.id}>
-                          {d.full_name} · {d.contact_number || '—'}{d.status === 'inactive' ? ' (inactive)' : ''}
+                          {d.full_name} · {d.contact_number || '—'}{d.is_verified ? ' ✓' : ''}
                         </option>
                       ))}
                     </select>
