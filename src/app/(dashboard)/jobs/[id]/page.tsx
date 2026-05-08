@@ -91,38 +91,55 @@ export default function JobDetailPage() {
       if (error) { toast.error('Job order not found'); return }
       setJob(data as any)
 
-      // Auto-sync inventory to destination warehouse for completed jobs
+      // Auto-sync inventory for completed jobs that haven't been credited yet
       if (data.status === 'completed' || data.status === 'delivered') {
         const { data: movements } = await supabase
           .from('warehouse_movements')
-          .select('id, to_warehouse_id, item_name, quantity, cbm, notes')
+          .select('id, from_warehouse_id, to_warehouse_id, item_name, quantity, cbm, notes')
           .eq('job_order_id', id)
           .eq('status', 'completed')
-          .not('to_warehouse_id', 'is', null)
         if (movements) {
           for (const mov of movements) {
             if (mov.notes?.includes('[inv_credited]')) continue
             if (!mov.item_name || !mov.quantity) continue
-            const { data: existing } = await supabase
-              .from('warehouse_inventory')
-              .select('id, quantity')
-              .eq('warehouse_id', mov.to_warehouse_id)
-              .ilike('item_name', mov.item_name)
-              .single()
-            if (existing) {
-              await supabase.from('warehouse_inventory').update({
-                quantity: existing.quantity + mov.quantity,
-                last_updated: new Date().toISOString(),
-              }).eq('id', existing.id)
-            } else {
-              await supabase.from('warehouse_inventory').insert({
-                warehouse_id: mov.to_warehouse_id,
-                item_name: mov.item_name,
-                quantity: mov.quantity,
-                unit: 'pcs',
-                cbm_per_unit: mov.cbm && mov.quantity ? mov.cbm / mov.quantity : 0,
-                last_updated: new Date().toISOString(),
-              })
+            // Deduct from source
+            if (mov.from_warehouse_id) {
+              const { data: srcItem } = await supabase
+                .from('warehouse_inventory')
+                .select('id, quantity')
+                .eq('warehouse_id', mov.from_warehouse_id)
+                .ilike('item_name', mov.item_name)
+                .single()
+              if (srcItem) {
+                await supabase.from('warehouse_inventory').update({
+                  quantity: Math.max(0, srcItem.quantity - mov.quantity),
+                  last_updated: new Date().toISOString(),
+                }).eq('id', srcItem.id)
+              }
+            }
+            // Add to destination
+            if (mov.to_warehouse_id) {
+              const { data: dstItem } = await supabase
+                .from('warehouse_inventory')
+                .select('id, quantity')
+                .eq('warehouse_id', mov.to_warehouse_id)
+                .ilike('item_name', mov.item_name)
+                .single()
+              if (dstItem) {
+                await supabase.from('warehouse_inventory').update({
+                  quantity: dstItem.quantity + mov.quantity,
+                  last_updated: new Date().toISOString(),
+                }).eq('id', dstItem.id)
+              } else {
+                await supabase.from('warehouse_inventory').insert({
+                  warehouse_id: mov.to_warehouse_id,
+                  item_name: mov.item_name,
+                  quantity: mov.quantity,
+                  unit: 'pcs',
+                  cbm_per_unit: mov.cbm && mov.quantity ? mov.cbm / mov.quantity : 0,
+                  last_updated: new Date().toISOString(),
+                })
+              }
             }
             await supabase.from('warehouse_movements').update({
               notes: (mov.notes ? mov.notes + ' ' : '') + '[inv_credited]',
@@ -266,25 +283,41 @@ export default function JobDetailPage() {
       if (newStatus === 'delivered' || newStatus === 'completed') {
         const { data: movements } = await supabase
           .from('warehouse_movements')
-          .select('id, to_warehouse_id, item_name, quantity, cbm')
+          .select('id, from_warehouse_id, to_warehouse_id, item_name, quantity, cbm')
           .eq('job_order_id', id)
           .in('status', ['pending', 'in_transit'])
         if (movements && movements.length > 0) {
           for (const mov of movements) {
             await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
-            // Add inventory to destination warehouse
-            if (mov.to_warehouse_id && mov.item_name && mov.quantity > 0) {
-              const { data: existing } = await supabase
+            if (!mov.item_name || !mov.quantity) continue
+            // Deduct from source warehouse
+            if (mov.from_warehouse_id) {
+              const { data: srcItem } = await supabase
+                .from('warehouse_inventory')
+                .select('id, quantity')
+                .eq('warehouse_id', mov.from_warehouse_id)
+                .ilike('item_name', mov.item_name)
+                .single()
+              if (srcItem) {
+                await supabase.from('warehouse_inventory').update({
+                  quantity: Math.max(0, srcItem.quantity - mov.quantity),
+                  last_updated: new Date().toISOString(),
+                }).eq('id', srcItem.id)
+              }
+            }
+            // Add to destination warehouse
+            if (mov.to_warehouse_id) {
+              const { data: dstItem } = await supabase
                 .from('warehouse_inventory')
                 .select('id, quantity')
                 .eq('warehouse_id', mov.to_warehouse_id)
                 .ilike('item_name', mov.item_name)
                 .single()
-              if (existing) {
+              if (dstItem) {
                 await supabase.from('warehouse_inventory').update({
-                  quantity: existing.quantity + mov.quantity,
+                  quantity: dstItem.quantity + mov.quantity,
                   last_updated: new Date().toISOString(),
-                }).eq('id', existing.id)
+                }).eq('id', dstItem.id)
               } else {
                 await supabase.from('warehouse_inventory').insert({
                   warehouse_id: mov.to_warehouse_id,
@@ -465,29 +498,6 @@ export default function JobDetailPage() {
   async function handleDelete() {
     if (!confirm('Are you sure you want to delete this job order? This cannot be undone.')) return
     try {
-      // Restore inventory from warehouse movements that haven't been completed yet
-      const { data: movements } = await supabase
-        .from('warehouse_movements')
-        .select('from_warehouse_id, item_name, quantity, status')
-        .eq('job_order_id', id)
-        .in('status', ['pending', 'in_transit'])
-      if (movements) {
-        for (const mov of movements) {
-          if (!mov.from_warehouse_id || !mov.item_name || !mov.quantity) continue
-          const { data: invItem } = await supabase
-            .from('warehouse_inventory')
-            .select('id, quantity')
-            .eq('warehouse_id', mov.from_warehouse_id)
-            .ilike('item_name', mov.item_name)
-            .single()
-          if (invItem) {
-            await supabase.from('warehouse_inventory').update({
-              quantity: invItem.quantity + mov.quantity,
-              last_updated: new Date().toISOString(),
-            }).eq('id', invItem.id)
-          }
-        }
-      }
       await supabase.from('warehouse_movements').delete().eq('job_order_id', id)
       await supabase.from('job_applicants').delete().eq('job_order_id', id)
       await supabase.from('delivery_status_logs').delete().eq('job_order_id', id)

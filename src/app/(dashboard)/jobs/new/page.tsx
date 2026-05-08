@@ -118,16 +118,8 @@ export default function NewJobPage() {
             status: 'pending',
             moved_by: session.user.id,
           })
-          // Reserve stock — reduce available quantity
-          const { data: inv } = await supabase.from('warehouse_inventory').select('quantity').eq('id', item.inventory_id).single()
-          if (inv) {
-            await supabase.from('warehouse_inventory').update({
-              quantity: Math.max(0, inv.quantity - item.quantity),
-              last_updated: new Date().toISOString(),
-            }).eq('id', item.inventory_id)
-          }
         }
-        toast.success(`Job order ${job.job_number} created! ${inventoryItems.length} item(s) reserved from warehouse.`)
+        toast.success(`Job order ${job.job_number} created! ${inventoryItems.length} item(s) will be moved when job is completed.`)
       } else {
         toast.success(`Job order ${job.job_number} created!`)
       }
