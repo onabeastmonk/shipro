@@ -60,7 +60,7 @@ export default function JobDetailPage() {
           .from('truck_drivers')
           .select('*')
           .eq('owner_id', session.user.id)
-          .eq('status', 'active')
+          .order('full_name')
         setMyDrivers(drivers || [])
       }
 
@@ -720,17 +720,23 @@ export default function JobDetailPage() {
                   </div>
                 )}
                 {/* Driver selection */}
-                {myDrivers.length > 0 && (
-                  <div className="mb-3">
-                    <label className="text-xs text-text-muted font-semibold uppercase mb-2 block">Select Driver for this Trip</label>
+                <div className="mb-3">
+                  <label className="text-xs text-text-muted font-semibold uppercase mb-2 block">Select Driver for this Trip</label>
+                  {myDrivers.length === 0 ? (
+                    <div className="bg-bg-tertiary border border-border rounded p-3 text-xs text-text-muted">
+                      No drivers registered. <Link href="/drivers" className="text-info underline">Add a driver →</Link>
+                    </div>
+                  ) : (
                     <select className="form-input" value={selectedDriverId} onChange={e => setSelectedDriverId(e.target.value)}>
-                      <option value="">— Select driver —</option>
+                      <option value="">— Select driver (optional) —</option>
                       {myDrivers.map((d: any) => (
-                        <option key={d.id} value={d.id}>{d.full_name} · {d.contact_number || '—'}</option>
+                        <option key={d.id} value={d.id}>
+                          {d.full_name} · {d.contact_number || '—'}{d.status === 'inactive' ? ' (inactive)' : ''}
+                        </option>
                       ))}
                     </select>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Helper */}
                 <div className="mb-3">
