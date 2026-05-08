@@ -41,6 +41,7 @@ export default function NewJobPage() {
   const [warehouses, setWarehouses] = useState<any[]>([])
   const [warehouseInventory, setWarehouseInventory] = useState<any[]>([])
   const [showInventoryPicker, setShowInventoryPicker] = useState(false)
+  const [pickerQtys, setPickerQtys] = useState<Record<string, number>>({})
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -490,49 +491,77 @@ export default function NewJobPage() {
               ) : (
                 warehouseInventory.map((inv: any) => {
                   const alreadyAdded = items.find(i => (i as any).inventory_id === inv.id)
+                  const pickerQty = pickerQtys[inv.id] ?? 1
                   return (
                     <div key={inv.id}
-                      onClick={() => {
-                        if (alreadyAdded) {
-                          // Remove if already added
-                          setItems(prev => prev.filter(i => (i as any).inventory_id !== inv.id))
-                        } else {
-                          // Add to items
-                          setItems(prev => [...prev, {
-                            item_name: inv.item_name,
-                            quantity: 1,
-                            cbm_per_item: inv.cbm_per_unit || 0,
-                            is_fragile: false,
-                            requires_special_handling: false,
-                            remarks: '',
-                            inventory_id: inv.id,
-                            from_inventory: true,
-                            max_quantity: inv.quantity,
-                            unit: inv.unit || 'pcs',
-                            warehouse_id: inv.warehouse_id,
-                          } as any])
-                        }
-                      }}
-                      className="flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all"
+                      className="p-3 rounded-lg transition-all"
                       style={{
                         background: alreadyAdded ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)',
                         border: alreadyAdded ? '1.5px solid #60a5fa' : '1px solid rgba(255,255,255,0.08)',
                       }}>
-                      <div className="flex-1">
-                        <div className="text-sm font-semibold text-text-primary">{inv.item_name}</div>
-                        <div className="flex gap-3 mt-0.5">
-                          <span className="text-xs text-text-muted">Stock: <strong className="text-text-secondary">{inv.quantity} {inv.unit}</strong></span>
-                          {inv.cbm_per_unit > 0 && <span className="text-xs text-info">{inv.cbm_per_unit} CBM/unit</span>}
-                          {inv.sku && <span className="text-xs text-text-muted">SKU: {inv.sku}</span>}
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="text-sm font-semibold text-text-primary">{inv.item_name}</div>
+                          <div className="flex gap-3 mt-0.5">
+                            <span className="text-xs text-text-muted">Stock: <strong className="text-text-secondary">{inv.quantity} {inv.unit}</strong></span>
+                            {inv.cbm_per_unit > 0 && <span className="text-xs text-info">{inv.cbm_per_unit} CBM/unit</span>}
+                            {inv.sku && <span className="text-xs text-text-muted">SKU: {inv.sku}</span>}
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex-shrink-0 ml-3">
                         {alreadyAdded ? (
-                          <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: '#60a5fa', color: '#000' }}>✓ Added</span>
-                        ) : (
-                          <span className="text-xs font-bold px-2 py-1 rounded-full bg-bg-tertiary text-text-muted">+ Add</span>
-                        )}
+                          <button type="button" onClick={() => setItems(prev => prev.filter(i => (i as any).inventory_id !== inv.id))}
+                            className="text-xs font-bold px-2 py-1 rounded-full ml-3 flex-shrink-0"
+                            style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
+                            ✕ Remove
+                          </button>
+                        ) : null}
                       </div>
+                      {!alreadyAdded && (
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="flex items-center gap-1 flex-1">
+                            <label className="text-xs text-text-muted whitespace-nowrap">Qty:</label>
+                            <input
+                              type="number" min="1" max={inv.quantity}
+                              value={pickerQty}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => {
+                                const val = Math.min(parseInt(e.target.value) || 1, inv.quantity)
+                                setPickerQtys(prev => ({ ...prev, [inv.id]: val }))
+                              }}
+                              className="form-input text-xs"
+                              style={{ width: '70px' }}
+                            />
+                            <span className="text-xs text-text-muted">/ {inv.quantity} {inv.unit}</span>
+                          </div>
+                          <button type="button"
+                            onClick={() => {
+                              const qty = pickerQtys[inv.id] ?? 1
+                              if (qty > inv.quantity) { toast.error(`Only ${inv.quantity} units available`); return }
+                              setItems(prev => [...prev, {
+                                item_name: inv.item_name,
+                                quantity: qty,
+                                cbm_per_item: inv.cbm_per_unit || 0,
+                                is_fragile: false,
+                                requires_special_handling: false,
+                                remarks: '',
+                                inventory_id: inv.id,
+                                from_inventory: true,
+                                max_quantity: inv.quantity,
+                                unit: inv.unit || 'pcs',
+                                warehouse_id: inv.warehouse_id,
+                              } as any])
+                            }}
+                            className="text-xs font-bold px-3 py-1 rounded-full flex-shrink-0"
+                            style={{ background: 'rgba(96,165,250,0.2)', color: '#60a5fa', border: '1px solid rgba(96,165,250,0.4)' }}>
+                            + Add
+                          </button>
+                        </div>
+                      )}
+                      {alreadyAdded && (
+                        <div className="text-xs mt-1" style={{ color: '#60a5fa' }}>
+                          {(items.find(i => (i as any).inventory_id === inv.id) as any)?.quantity} {inv.unit} selected
+                        </div>
+                      )}
                     </div>
                   )
                 })
