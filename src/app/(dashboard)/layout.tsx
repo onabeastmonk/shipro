@@ -59,6 +59,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [emergencyFlash, setEmergencyFlash] = useState(false)
 
   useEffect(() => {
+    let cleanup: (() => void) | undefined
+
     async function loadUser() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
@@ -87,32 +89,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             setEmergencyFlash(true)
             setTimeout(() => setEmergencyFlash(false), 5000)
           }).subscribe()
-        return () => { supabase.removeChannel(emergChannel) }
+        cleanup = () => { supabase.removeChannel(emergChannel) }
+        return
       }
 
-      // Real-time message badge - fix: mark as read when viewing chat
+      // Real-time message badge
       const msgChannel = supabase.channel('layout-messages')
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages',
           filter: `receiver_id=eq.${session.user.id}` }, () => {
-          // Only increment if not currently on chat page
           if (!window.location.pathname.startsWith('/chat')) {
             setUnreadMessages(prev => prev + 1)
           }
         }).subscribe()
 
-      // Clear message badge when visiting chat
+      // Always re-query unread count so badge clears after reading messages
       const interval = setInterval(async () => {
-        if (window.location.pathname.startsWith('/chat')) {
-          const { count } = await supabase.from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('receiver_id', session.user.id).eq('is_read', false)
-          setUnreadMessages(count || 0)
-        }
-      }, 3000)
+        const { count } = await supabase.from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('receiver_id', session.user.id).eq('is_read', false)
+        setUnreadMessages(count || 0)
+      }, 4000)
 
-      return () => { supabase.removeChannel(msgChannel); clearInterval(interval) }
+      cleanup = () => { supabase.removeChannel(msgChannel); clearInterval(interval) }
     }
     loadUser()
+    return () => { cleanup?.() }
   }, [router])
 
   // Close more menu when navigating
