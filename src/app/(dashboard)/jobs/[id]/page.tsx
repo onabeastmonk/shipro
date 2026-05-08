@@ -840,7 +840,7 @@ export default function JobDetailPage() {
             )}
             {/* Helper — from approved applicant record */}
             {(() => {
-              const approved = (job.applicants || []).find((a: any) => a.status === 'approved')
+              const approved = (job.applicants || []).find((a: any) => a.status === 'approved') as any
               const nameRaw = approved?.selected_helper_name || ''
               const contactRaw = approved?.selected_helper_contact || ''
               const helperName = nameRaw.split(' | ').find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '')
