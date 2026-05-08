@@ -91,6 +91,46 @@ export default function JobDetailPage() {
       if (error) { toast.error('Job order not found'); return }
       setJob(data as any)
 
+      // Auto-sync inventory to destination warehouse for completed jobs
+      if (data.status === 'completed' || data.status === 'delivered') {
+        const { data: movements } = await supabase
+          .from('warehouse_movements')
+          .select('id, to_warehouse_id, item_name, quantity, cbm, notes')
+          .eq('job_order_id', id)
+          .eq('status', 'completed')
+          .not('to_warehouse_id', 'is', null)
+        if (movements) {
+          for (const mov of movements) {
+            if (mov.notes?.includes('[inv_credited]')) continue
+            if (!mov.item_name || !mov.quantity) continue
+            const { data: existing } = await supabase
+              .from('warehouse_inventory')
+              .select('id, quantity')
+              .eq('warehouse_id', mov.to_warehouse_id)
+              .ilike('item_name', mov.item_name)
+              .single()
+            if (existing) {
+              await supabase.from('warehouse_inventory').update({
+                quantity: existing.quantity + mov.quantity,
+                last_updated: new Date().toISOString(),
+              }).eq('id', existing.id)
+            } else {
+              await supabase.from('warehouse_inventory').insert({
+                warehouse_id: mov.to_warehouse_id,
+                item_name: mov.item_name,
+                quantity: mov.quantity,
+                unit: 'pcs',
+                cbm_per_unit: mov.cbm && mov.quantity ? mov.cbm / mov.quantity : 0,
+                last_updated: new Date().toISOString(),
+              })
+            }
+            await supabase.from('warehouse_movements').update({
+              notes: (mov.notes ? mov.notes + ' ' : '') + '[inv_credited]',
+            }).eq('id', mov.id)
+          }
+        }
+      }
+
       // Find my application
       const myUid = uid || userId
       if (myUid && data.applicants) {

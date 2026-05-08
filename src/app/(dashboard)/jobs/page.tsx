@@ -274,10 +274,18 @@ function JobCard({ job, userRole, userId, onShowMap }: {
                 {(() => {
                   const j = job as any
                   if (j.pricing_mode === 'per_cbm' && j.rate_per_cbm) {
-                    const est = j.rate_per_cbm * (j.total_cbm || 0)
+                    const targetPay = j.rate_per_cbm * (totalCBM || 0)
+                    const actualPay = j.actual_cbm > 0 ? j.rate_per_cbm * j.actual_cbm : null
                     return (
                       <div className="text-right">
-                        {j.total_cbm > 0 && <div className="font-heading text-lg font-bold text-text-primary">{formatCurrency(est)}</div>}
+                        {actualPay !== null ? (
+                          <>
+                            <div className="font-heading text-lg font-bold text-success">{formatCurrency(actualPay)}</div>
+                            <div className="font-heading text-xs text-text-secondary line-through">{formatCurrency(targetPay)}</div>
+                          </>
+                        ) : (
+                          totalCBM > 0 && <div className="font-heading text-lg font-bold text-text-primary">{formatCurrency(targetPay)}</div>
+                        )}
                         <div className="text-xs text-text-muted">{`₱${Number(j.rate_per_cbm).toLocaleString()}/CBM`}</div>
                       </div>
                     )
