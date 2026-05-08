@@ -233,7 +233,67 @@ export default function JobDetailPage() {
           for (const mov of movements) {
             await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
           }
-          toast.success(`${movements.length} warehouse movement(s) marked as completed`)
+        }
+      }
+
+      // AUTO-GENERATE PAYSLIP when completed with per_cbm pricing
+      if (newStatus === 'completed' && (job as any).pricing_mode === 'per_cbm' && (job as any).rate_per_cbm) {
+        const actualCBM = (job as any).actual_cbm || totalCBM
+        const rateCBM = (job as any).rate_per_cbm || 0
+        const basePay = rateCBM * actualCBM
+        const targetPay = rateCBM * totalCBM
+        const deductionAmt = targetPay - basePay
+
+        // Get loading notes for deduction remarks
+        const { data: loadLog } = await supabase
+          .from('delivery_status_logs')
+          .select('note')
+          .eq('job_order_id', id)
+          .eq('status', 'loaded')
+          .single()
+
+        // Build deduction remarks
+        let remarks = `Auto-generated. Per CBM pricing: ₱${rateCBM.toLocaleString()}/CBM`
+        if (actualCBM < totalCBM) {
+          remarks += ` | Target: ${totalCBM.toFixed(3)} CBM | Actual: ${actualCBM.toFixed(3)} CBM | Deduction: ${(totalCBM - actualCBM).toFixed(3)} CBM`
+        }
+        if (loadLog?.note) {
+          remarks += ` | Loading note: ${loadLog.note}`
+        }
+
+        // Get shipment items for item count
+        const itemCount = job.shipment_items?.reduce((s: number, i: any) => s + (i.quantity || 1), 0) || 0
+
+        // Generate payslip number
+        const psNum = `PS-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`
+
+        const { error: payError } = await supabase.from('payslips').insert({
+          payslip_number: psNum,
+          job_order_id: id,
+          driver_id: job.assigned_driver_id,
+          delivery_date: job.delivery_date,
+          pickup_location: job.pickup_location,
+          dropoff_location: job.dropoff_location,
+          truck_type_label: (job.truck as any)?.truck_type_label || '',
+          base_rate: basePay,
+          rate_per_cbm: rateCBM,
+          target_cbm: totalCBM,
+          actual_cbm: actualCBM,
+          pricing_mode: 'per_cbm',
+          additional_charges: 0,
+          fuel_allowance: 0,
+          toll_fee: 0,
+          parking_fee: 0,
+          deductions: deductionAmt > 0 ? deductionAmt : 0,
+          total_amount: Math.max(0, basePay),
+          payment_status: 'pending',
+          items_count: itemCount,
+          remarks,
+          created_by: userId,
+        })
+
+        if (!payError) {
+          toast.success(`✅ Payslip auto-generated! ${actualCBM < totalCBM ? `CBM deduction applied: -${(totalCBM - actualCBM).toFixed(3)} CBM` : 'Full CBM paid.'}`)
         }
       }
     } catch (err: any) {
@@ -428,9 +488,9 @@ export default function JobDetailPage() {
               <p className="font-heading text-base font-bold text-text-primary mt-0.5">
                 {(job as any).pricing_mode === 'per_cbm' && (job as any).rate_per_cbm ? (
                   <div>
-                    <div className="font-heading text-xl font-bold">₱{Number((job as any).rate_per_cbm).toLocaleString()}/CBM</div>
-                    {job.total_cbm && <div className="text-xs text-text-muted">Est. total: {formatCurrency((job as any).rate_per_cbm * job.total_cbm)}</div>}
-                    {(job as any).actual_cbm > 0 && <div className="text-xs text-success">Actual: {formatCurrency((job as any).rate_per_cbm * (job as any).actual_cbm)}</div>}
+                    {job.total_cbm && <div className="font-heading text-2xl font-bold text-text-primary">{formatCurrency((job as any).rate_per_cbm * job.total_cbm)}</div>}
+                    {(job as any).actual_cbm > 0 && <div className="font-heading text-lg font-bold text-success">{formatCurrency((job as any).rate_per_cbm * (job as any).actual_cbm)}</div>}
+                    <div className="text-xs text-text-muted mt-0.5">₱{Number((job as any).rate_per_cbm).toLocaleString()}/CBM</div>
                   </div>
                 ) : job.total_rate ? formatCurrency(job.total_rate) : (job as any).base_rate ? formatCurrency((job as any).base_rate) : '—'}
               </p>
