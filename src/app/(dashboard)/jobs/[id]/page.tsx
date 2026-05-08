@@ -185,8 +185,14 @@ export default function JobDetailPage() {
         : null
       const helperLabel = helperName || null
       const combinedName = [driverLabel, helperLabel ? `Helper: ${helperLabel}` : null].filter(Boolean).join(' | ') || null
+      // Encode driver profile ID (for assignment) + contacts
+      const driverProfileId = selectedDriver?.source === 'profile' ? selectedDriver.id : null
       const driverContact = selectedDriver?.contact_number || null
-      const combinedContact = [driverContact, helperContact ? `Helper: ${helperContact}` : null].filter(Boolean).join(' | ') || null
+      const combinedContact = [
+        driverProfileId ? `profile:${driverProfileId}` : null,
+        driverContact,
+        helperContact ? `Helper: ${helperContact}` : null,
+      ].filter(Boolean).join('|') || null
       const { error } = await supabase.from('job_applicants').insert({
         job_order_id: id,
         truck_id: selectedTruckId,
@@ -226,11 +232,16 @@ export default function JobDetailPage() {
       await supabase.from('job_applicants').update({ status: 'rejected' })
         .eq('job_order_id', id).neq('id', applicant.id)
 
+      // Extract actual driver profile ID from stored contact field
+      const contactRaw = applicant.selected_helper_contact || ''
+      const profileMatch = contactRaw.match(/profile:([0-9a-f-]{36})/i)
+      const actualDriverId = profileMatch ? profileMatch[1] : applicant.driver_id
+
       // Assign to job
       await supabase.from('job_orders').update({
         status: 'assigned',
         assigned_truck_id: applicant.truck_id,
-        assigned_driver_id: applicant.driver_id,
+        assigned_driver_id: actualDriverId,
       }).eq('id', id)
 
       // Mark truck as on_job
@@ -261,7 +272,7 @@ export default function JobDetailPage() {
     if (!userId || !job) return
 
     // Only assigned driver/truck_owner or admin can update status
-    if (userRole === 'truck_owner' && job.assigned_driver_id !== userId) {
+    if (userRole === 'truck_owner' && (job as any).truck?.owner_id !== userId && job.assigned_driver_id !== userId) {
       toast.error('Only the assigned truck owner can update delivery status')
       return
     }
@@ -537,7 +548,7 @@ export default function JobDetailPage() {
   const isAdmin = userRole === 'admin' || userRole === 'fleet_manager'
   const isWarehouseManager = userRole === 'warehouse_manager'
   const isTruckOwner = userRole === 'truck_owner'
-  const isAssignedTruckOwner = isTruckOwner && job.assigned_driver_id === userId
+  const isAssignedTruckOwner = isTruckOwner && ((job as any).truck?.owner_id === userId || job.assigned_driver_id === userId)
   const pendingApplicants = (job.applicants || []).filter((a: any) => a.status === 'pending')
 
   return (
@@ -795,7 +806,7 @@ export default function JobDetailPage() {
           </div>
         )}
 
-        {/* Assigned Truck + Contact */}
+        {/* Assigned Truck + Contacts */}
         {job.truck && (
           <div className="bg-bg-secondary border border-border rounded-lg p-4 space-y-3">
             <div className="text-xs text-text-muted font-semibold uppercase">Assigned Truck</div>
@@ -806,14 +817,57 @@ export default function JobDetailPage() {
                 <div className="text-xs text-text-muted">{job.truck.truck_type_label}</div>
               </div>
             </div>
+            {/* Truck Owner */}
             <ContactCard
-              userId={job.assigned_driver_id || (job.truck as any)?.owner_id}
-              name={(job.driver as any)?.full_name || job.truck.owner_name || job.truck.driver_name}
+              userId={(job.truck as any)?.owner_id}
+              name={job.truck.owner_name}
               role="truck_owner"
-              contactNumber={(job.driver as any)?.contact_number || job.truck.contact_number}
-              email={(job.driver as any)?.email}
-              label="Truck Owner / Driver"
+              contactNumber={job.truck.contact_number}
+              label="Truck Owner"
+              compact
             />
+            {/* Driver (has own account) */}
+            {(job.driver as any)?.full_name && (
+              <ContactCard
+                userId={job.assigned_driver_id}
+                name={(job.driver as any)?.full_name}
+                role="driver"
+                contactNumber={(job.driver as any)?.contact_number}
+                email={(job.driver as any)?.email}
+                label="Driver"
+                compact
+              />
+            )}
+            {/* Helper — from approved applicant record */}
+            {(() => {
+              const approved = (job.applicants || []).find((a: any) => a.status === 'approved')
+              const nameRaw = approved?.selected_helper_name || ''
+              const contactRaw = approved?.selected_helper_contact || ''
+              const helperName = nameRaw.split(' | ').find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '')
+              const helperContact = contactRaw.split('|').find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '')
+              if (!helperName) return null
+              return (
+                <div className="flex items-center justify-between bg-bg-tertiary rounded-lg px-3 py-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full bg-bg-elevated flex items-center justify-center text-xs font-bold text-text-secondary flex-shrink-0">
+                      {helperName.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="text-xs text-text-muted">Helper / Pahinante</div>
+                      <div className="text-sm font-semibold text-text-primary">{helperName}</div>
+                      {helperContact && <div className="text-xs text-text-muted">📞 {helperContact}</div>}
+                    </div>
+                  </div>
+                  {helperContact && (
+                    <a href={`tel:${helperContact}`}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold"
+                      style={{ background: 'rgba(34,197,94,0.2)', border: '1.5px solid #22c55e', color: '#22c55e', textDecoration: 'none' }}>
+                      📞 Call
+                    </a>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         )}
 
