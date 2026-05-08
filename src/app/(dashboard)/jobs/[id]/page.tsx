@@ -171,14 +171,21 @@ export default function JobDetailPage() {
     setApplying(true)
     try {
       const selectedDriver = myDrivers.find((d: any) => d.id === selectedDriverId)
+      const driverLabel = selectedDriver
+        ? `${selectedDriver.full_name}${selectedDriver.is_verified ? ' ✓' : ''}`
+        : null
+      const helperLabel = helperName || null
+      const combinedName = [driverLabel, helperLabel ? `Helper: ${helperLabel}` : null].filter(Boolean).join(' | ') || null
+      const driverContact = selectedDriver?.contact_number || null
+      const combinedContact = [driverContact, helperContact ? `Helper: ${helperContact}` : null].filter(Boolean).join(' | ') || null
       const { error } = await supabase.from('job_applicants').insert({
         job_order_id: id,
         truck_id: selectedTruckId,
         driver_id: userId,
         status: 'pending',
         selected_driver_id: null,
-        selected_helper_name: selectedDriver ? selectedDriver.full_name : (helperName || null),
-        selected_helper_contact: selectedDriver ? (selectedDriver.contact_number || null) : (helperContact || null),
+        selected_helper_name: combinedName,
+        selected_helper_contact: combinedContact,
       })
       if (error) throw error
 
@@ -1046,7 +1053,21 @@ export default function JobDetailPage() {
                   <DetailRow label="Plate Number" value={viewTruckDetails.truck?.plate_number || '—'} highlight />
                   <DetailRow label="Truck Type" value={viewTruckDetails.truck?.truck_type_label || '—'} />
                   <DetailRow label="CBM Capacity" value={viewTruckDetails.truck?.cbm_capacity ? `${viewTruckDetails.truck.cbm_capacity} CBM` : '—'} highlight />
-                  <DetailRow label="Driver Name" value={viewTruckDetails.truck?.driver_name || '—'} />
+                </div>
+              </div>
+
+              {/* Driver & Helper */}
+              <div>
+                <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Driver & Helper</div>
+                <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
+                  {viewTruckDetails.selected_helper_name ? (
+                    <>
+                      <DetailRow label="Driver / Helper Name" value={viewTruckDetails.selected_helper_name} highlight />
+                      <DetailRow label="Contact" value={viewTruckDetails.selected_helper_contact || '—'} />
+                    </>
+                  ) : (
+                    <p className="text-xs text-text-muted italic">No driver or helper specified.</p>
+                  )}
                 </div>
               </div>
 
