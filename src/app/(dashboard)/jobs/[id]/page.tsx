@@ -226,12 +226,36 @@ export default function JobDetailPage() {
       if (newStatus === 'delivered' || newStatus === 'completed') {
         const { data: movements } = await supabase
           .from('warehouse_movements')
-          .select('id')
+          .select('id, to_warehouse_id, item_name, quantity, cbm')
           .eq('job_order_id', id)
           .eq('status', 'in_transit')
         if (movements && movements.length > 0) {
           for (const mov of movements) {
             await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
+            // Add inventory to destination warehouse
+            if (mov.to_warehouse_id && mov.item_name && mov.quantity > 0) {
+              const { data: existing } = await supabase
+                .from('warehouse_inventory')
+                .select('id, quantity')
+                .eq('warehouse_id', mov.to_warehouse_id)
+                .ilike('item_name', mov.item_name)
+                .single()
+              if (existing) {
+                await supabase.from('warehouse_inventory').update({
+                  quantity: existing.quantity + mov.quantity,
+                  last_updated: new Date().toISOString(),
+                }).eq('id', existing.id)
+              } else {
+                await supabase.from('warehouse_inventory').insert({
+                  warehouse_id: mov.to_warehouse_id,
+                  item_name: mov.item_name,
+                  quantity: mov.quantity,
+                  unit: 'pcs',
+                  cbm_per_unit: mov.cbm && mov.quantity ? mov.cbm / mov.quantity : 0,
+                  last_updated: new Date().toISOString(),
+                })
+              }
+            }
           }
         }
       }

@@ -298,43 +298,79 @@ export default function WarehouseDetailPage() {
               <div className="text-center py-8 text-text-muted text-sm">No movements recorded yet.</div>
             ) : (
               <div className="space-y-2">
-                {movements.map(mov => {
-                  const isOut = mov.from_warehouse_id === id
-                  const statusColor = mov.status === 'completed' ? 'text-success' : mov.status === 'in_transit' ? 'text-warning' : mov.status === 'cancelled' ? 'text-danger' : 'text-text-muted'
-                  return (
-                    <div key={mov.id} className="bg-bg-secondary border border-border rounded-lg p-3">
-                      <div className="flex items-start justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">{isOut ? '📤' : '📥'}</span>
-                          <div>
-                            <span className="text-sm font-semibold text-text-primary">{mov.item_name}</span>
-                            <span className="text-xs text-text-muted ml-2">×{mov.quantity}</span>
-                            {mov.cbm && <span className="text-xs ml-2" style={{ color: '#60a5fa' }}>{mov.cbm} CBM</span>}
+                {(() => {
+                  // Group movements by job_order_id (or individual id if no job)
+                  const groups: Record<string, any[]> = {}
+                  movements.forEach(mov => {
+                    const key = mov.job_order_id || `solo-${mov.id}`
+                    if (!groups[key]) groups[key] = []
+                    groups[key].push(mov)
+                  })
+                  return Object.entries(groups).map(([key, items]) => {
+                    const first = items[0]
+                    const isOut = first.from_warehouse_id === id
+                    const allCompleted = items.every(m => m.status === 'completed')
+                    const anyInTransit = items.some(m => m.status === 'in_transit')
+                    const overallStatus = allCompleted ? 'completed' : anyInTransit ? 'in_transit' : first.status
+                    const statusColor = overallStatus === 'completed' ? 'text-success' : overallStatus === 'in_transit' ? 'text-warning' : overallStatus === 'cancelled' ? 'text-danger' : 'text-text-muted'
+                    const totalCbm = items.reduce((s, m) => s + (parseFloat(m.cbm) || 0), 0)
+                    const totalQty = items.reduce((s, m) => s + (m.quantity || 0), 0)
+                    return (
+                      <div key={key} className="bg-bg-secondary border border-border rounded-lg p-3">
+                        {/* Header row */}
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">{isOut ? '📤' : '📥'}</span>
+                            <div>
+                              {first.job ? (
+                                <div className="text-sm font-semibold text-text-primary">🚛 {first.job.job_number}</div>
+                              ) : (
+                                <div className="text-sm font-semibold text-text-primary">Manual Movement</div>
+                              )}
+                              {first.job?.client_name && <div className="text-xs text-text-muted">{first.job.client_name}</div>}
+                            </div>
                           </div>
+                          <span className={`text-xs font-semibold capitalize ${statusColor}`}>{overallStatus?.replace('_', ' ')}</span>
                         </div>
-                        <span className={`text-xs font-semibold capitalize ${statusColor}`}>{mov.status?.replace('_', ' ')}</span>
+                        {/* Route */}
+                        <div className="flex items-center gap-2 text-xs text-text-muted mb-2">
+                          <span>{first.from_wh?.name || 'External'}</span>
+                          <ArrowRight size={11} />
+                          <span>{first.to_wh?.name || 'External'}</span>
+                          {totalCbm > 0 && <span className="ml-auto font-bold" style={{ color: '#60a5fa' }}>{totalCbm.toFixed(3)} CBM total</span>}
+                        </div>
+                        {/* Items list */}
+                        <div className="space-y-1 border-t border-border pt-2 mt-1">
+                          {items.map(m => (
+                            <div key={m.id} className="flex items-center justify-between text-xs">
+                              <span className="text-text-secondary">{m.item_name}</span>
+                              <div className="flex items-center gap-2 text-text-muted">
+                                <span>×{m.quantity}</span>
+                                {m.cbm > 0 && <span style={{ color: '#60a5fa' }}>{m.cbm} CBM</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Footer */}
+                        <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-border">
+                          <span className="text-xs text-text-muted">{formatDate(first.created_at)}{first.mover?.full_name && ` · ${first.mover.full_name}`}</span>
+                          {anyInTransit && (
+                            <button onClick={async () => {
+                              const inTransitIds = items.filter(m => m.status === 'in_transit').map(m => m.id)
+                              for (const mid of inTransitIds) {
+                                await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mid)
+                              }
+                              setMovements(prev => prev.map(m => inTransitIds.includes(m.id) ? { ...m, status: 'completed' } : m))
+                              toast.success('Delivery marked as completed')
+                            }} className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                              ✓ Complete
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-text-muted">
-                        <span>{mov.from_wh?.name || 'External'}</span>
-                        <ArrowRight size={11} />
-                        <span>{mov.to_wh?.name || 'External'}</span>
-                      </div>
-                      {mov.job && <div className="text-xs text-text-muted mt-0.5">🚛 {mov.job.job_number} · {mov.job.client_name}</div>}
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs text-text-muted">{formatDate(mov.created_at)} {mov.mover?.full_name && `· ${mov.mover.full_name}`}</span>
-                        {mov.status === 'in_transit' && (
-                          <button onClick={async () => {
-                            await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
-                            setMovements(prev => prev.map(m => m.id === mov.id ? { ...m, status: 'completed' } : m))
-                            toast.success('Marked as completed')
-                          }} className="text-xs font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                            ✓ Complete
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                })()}
               </div>
             )}
           </div>
