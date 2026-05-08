@@ -33,6 +33,8 @@ export default function ChatThreadPage() {
   }, [otherUserId])
 
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null
+
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
@@ -48,7 +50,7 @@ export default function ChatThreadPage() {
       await loadMessages(session.user.id)
 
       // Real-time subscription
-      const channel = supabase
+      channel = supabase
         .channel(`chat-${session.user.id}-${otherUserId}`)
         .on('postgres_changes', {
           event: 'INSERT',
@@ -61,17 +63,26 @@ export default function ChatThreadPage() {
             (msg.sender_id === session.user.id && msg.receiver_id === otherUserId)
           if (isRelevant) {
             setMessages(prev => {
-              // avoid duplicate if optimistic message already added
               if (prev.find(m => m.id === msg.id)) return prev
+              // replace matching optimistic temp message
+              const tempIdx = prev.findIndex(m => m.id.startsWith('temp-') && m.content === msg.content && m.sender_id === msg.sender_id)
+              if (tempIdx !== -1) {
+                const next = [...prev]
+                next[tempIdx] = msg
+                return next
+              }
               return [...prev, msg]
             })
           }
         })
         .subscribe()
-
-      return () => { supabase.removeChannel(channel) }
     }
+
     init()
+
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
   }, [otherUserId, router, loadMessages])
 
   useEffect(() => {
