@@ -465,6 +465,30 @@ export default function JobDetailPage() {
   async function handleDelete() {
     if (!confirm('Are you sure you want to delete this job order? This cannot be undone.')) return
     try {
+      // Restore inventory from warehouse movements that haven't been completed yet
+      const { data: movements } = await supabase
+        .from('warehouse_movements')
+        .select('from_warehouse_id, item_name, quantity, status')
+        .eq('job_order_id', id)
+        .in('status', ['pending', 'in_transit'])
+      if (movements) {
+        for (const mov of movements) {
+          if (!mov.from_warehouse_id || !mov.item_name || !mov.quantity) continue
+          const { data: invItem } = await supabase
+            .from('warehouse_inventory')
+            .select('id, quantity')
+            .eq('warehouse_id', mov.from_warehouse_id)
+            .ilike('item_name', mov.item_name)
+            .single()
+          if (invItem) {
+            await supabase.from('warehouse_inventory').update({
+              quantity: invItem.quantity + mov.quantity,
+              last_updated: new Date().toISOString(),
+            }).eq('id', invItem.id)
+          }
+        }
+      }
+      await supabase.from('warehouse_movements').delete().eq('job_order_id', id)
       await supabase.from('job_applicants').delete().eq('job_order_id', id)
       await supabase.from('delivery_status_logs').delete().eq('job_order_id', id)
       await supabase.from('shipment_items').delete().eq('job_order_id', id)
