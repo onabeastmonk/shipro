@@ -228,7 +228,7 @@ export default function JobDetailPage() {
           .from('warehouse_movements')
           .select('id, to_warehouse_id, item_name, quantity, cbm')
           .eq('job_order_id', id)
-          .eq('status', 'in_transit')
+          .in('status', ['pending', 'in_transit'])
         if (movements && movements.length > 0) {
           for (const mov of movements) {
             await supabase.from('warehouse_movements').update({ status: 'completed' }).eq('id', mov.id)
