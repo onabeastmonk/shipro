@@ -153,6 +153,10 @@ export async function generatePayslipPDF(payslip: {
   target_cbm?: number
   rate_per_cbm?: number
   items?: { item_name: string; quantity: number; cbm_per_item: number; total_cbm: number }[]
+  assigned_driver_name?: string
+  assigned_driver_contact?: string
+  helper_name?: string
+  helper_contact?: string
 }) {
   const jsPDF = (await import('jspdf')).default
   const autoTable = (await import('jspdf-autotable')).default
@@ -228,6 +232,20 @@ export async function generatePayslipPDF(payslip: {
   const r3 = value(payslip.pickup_location, col1, y, colW)
   const r4 = value(payslip.dropoff_location, col2, y, colW)
   y += Math.max(r3, r4) * 5 + 6
+
+  // Driver & Helper row (if available)
+  if (payslip.assigned_driver_name || payslip.helper_name) {
+    label('DRIVER', col1, y)
+    if (payslip.helper_name) label('HELPER / PAHINANTE', col2, y)
+    y += 5
+    const driverText = [payslip.assigned_driver_name, payslip.assigned_driver_contact].filter(Boolean).join(' · ') || '-'
+    const r5 = value(driverText, col1, y, colW)
+    if (payslip.helper_name) {
+      const helperText = [payslip.helper_name, payslip.helper_contact].filter(Boolean).join(' · ')
+      value(helperText, col2, y, colW)
+    }
+    y += Math.max(r5, 1) * 5 + 4
+  }
 
   doc.setDrawColor(180)
   doc.line(margin, y, pageW - margin, y)

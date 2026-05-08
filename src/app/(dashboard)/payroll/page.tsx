@@ -363,11 +363,29 @@ function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusCh
           )}
           <div className="flex gap-2">
             <button onClick={async () => {
-              // Fetch shipment items for this job
               let items: any[] = []
+              let assignedDriverName = ''
+              let assignedDriverContact = ''
+              let helperName = ''
+              let helperContact = ''
               if ((payslip as any).job_order_id) {
-                const { data } = await supabase.from('shipment_items').select('item_name, quantity, cbm_per_item, total_cbm').eq('job_order_id', (payslip as any).job_order_id)
-                items = data || []
+                const [itemsRes, jobRes] = await Promise.all([
+                  supabase.from('shipment_items').select('item_name, quantity, cbm_per_item, total_cbm').eq('job_order_id', (payslip as any).job_order_id),
+                  supabase.from('job_orders').select('assigned_driver_id, driver:profiles!assigned_driver_id(full_name, contact_number), applicants:job_applicants(status, selected_helper_name, selected_helper_contact)').eq('id', (payslip as any).job_order_id).single(),
+                ])
+                items = itemsRes.data || []
+                const job = jobRes.data as any
+                if (job) {
+                  assignedDriverName = job.driver?.full_name || ''
+                  assignedDriverContact = job.driver?.contact_number || ''
+                  const approved = (job.applicants || []).find((a: any) => a.status === 'approved')
+                  if (approved) {
+                    const nameParts = (approved.selected_helper_name || '').split(' | ')
+                    const contactParts = (approved.selected_helper_contact || '').split('|')
+                    helperName = nameParts.find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '') || ''
+                    helperContact = contactParts.find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '') || ''
+                  }
+                }
               }
               await generatePayslipPDF({
                 payslip_number: payslip.payslip_number, driver_name: driverName, job_number: jobNum,
@@ -379,6 +397,8 @@ function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusCh
                 payment_status: payslip.payment_status, remarks: payslip.remarks,
                 actual_cbm: (payslip as any).actual_cbm, target_cbm: (payslip as any).target_cbm,
                 rate_per_cbm: (payslip as any).rate_per_cbm, items,
+                assigned_driver_name: assignedDriverName, assigned_driver_contact: assignedDriverContact,
+                helper_name: helperName, helper_contact: helperContact,
               })
             }}
               className="btn btn-sm btn-outline flex items-center gap-1 flex-1">
