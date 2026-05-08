@@ -20,6 +20,8 @@ export default function OwnerProfilePage() {
   const [saving, setSaving] = useState(false)
   const [businessPermitFile, setBusinessPermitFile] = useState<File | null>(null)
   const [validIdFile, setValidIdFile] = useState<File | null>(null)
+  const [secDtiFile, setSecDtiFile] = useState<File | null>(null)
+  const [birFile, setBirFile] = useState<File | null>(null)
 
   useEffect(() => {
     async function load() {
@@ -56,7 +58,7 @@ export default function OwnerProfilePage() {
   }
 
   async function handleUploadDocs() {
-    if (!businessPermitFile && !validIdFile) { toast.error('Please select at least one file'); return }
+    if (!businessPermitFile && !validIdFile && !secDtiFile && !birFile) { toast.error('Please select at least one file'); return }
     setSaving(true)
     try {
       const updates: any = {}
@@ -68,11 +70,21 @@ export default function OwnerProfilePage() {
         const url = await uploadFile(validIdFile, `owner-docs/${userId}/valid-id.${validIdFile.name.split('.').pop()}`)
         if (url) updates.valid_id_url = url
       }
+      if (secDtiFile) {
+        const url = await uploadFile(secDtiFile, `owner-docs/${userId}/sec-dti.${secDtiFile.name.split('.').pop()}`)
+        if (url) updates.sec_dti_reg_url = url
+      }
+      if (birFile) {
+        const url = await uploadFile(birFile, `owner-docs/${userId}/bir.${birFile.name.split('.').pop()}`)
+        if (url) updates.bir_reg_url = url
+      }
       await supabase.from('profiles').update(updates).eq('id', userId)
       setProfile((p: any) => ({ ...p, ...updates }))
       toast.success('Documents uploaded!')
       setBusinessPermitFile(null)
       setValidIdFile(null)
+      setSecDtiFile(null)
+      setBirFile(null)
     } catch (err: any) {
       toast.error(err.message)
     } finally { setSaving(false) }
@@ -279,7 +291,39 @@ export default function OwnerProfilePage() {
             </label>
           </div>
 
-          {(businessPermitFile || validIdFile) && (
+          {/* SEC/DTI Registration */}
+          <div className="bg-bg-secondary border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold text-sm">SEC / DTI Registration</div>
+              {profile?.sec_dti_reg_url
+                ? <a href={profile.sec_dti_reg_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View uploaded</a>
+                : <span className="text-xs text-danger">Not uploaded</span>}
+            </div>
+            <label className="flex items-center gap-2 p-3 border border-dashed border-border rounded-lg cursor-pointer hover:border-border-secondary">
+              <Upload size={14} className="text-text-muted" />
+              <span className="text-xs text-text-secondary">{secDtiFile ? secDtiFile.name : 'Upload SEC or DTI Registration'}</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden"
+                onChange={e => e.target.files?.[0] && setSecDtiFile(e.target.files[0])} />
+            </label>
+          </div>
+
+          {/* BIR Registration */}
+          <div className="bg-bg-secondary border border-border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold text-sm">BIR Registration (COR)</div>
+              {profile?.bir_reg_url
+                ? <a href={profile.bir_reg_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View uploaded</a>
+                : <span className="text-xs text-danger">Not uploaded</span>}
+            </div>
+            <label className="flex items-center gap-2 p-3 border border-dashed border-border rounded-lg cursor-pointer hover:border-border-secondary">
+              <Upload size={14} className="text-text-muted" />
+              <span className="text-xs text-text-secondary">{birFile ? birFile.name : 'Upload BIR Registration'}</span>
+              <input type="file" accept=".jpg,.jpeg,.png,.pdf" className="hidden"
+                onChange={e => e.target.files?.[0] && setBirFile(e.target.files[0])} />
+            </label>
+          </div>
+
+          {(businessPermitFile || validIdFile || secDtiFile || birFile) && (
             <button onClick={handleUploadDocs} disabled={saving} className="btn btn-primary btn-full">
               {saving ? 'Uploading...' : '⬆️ Upload Documents'}
             </button>

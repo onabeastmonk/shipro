@@ -191,9 +191,13 @@ export default function JobDetailPage() {
       return
     }
 
-    // When marking as loaded — show CBM confirmation modal
-    // Can be done by truck_owner OR warehouse_manager
+    // When marking as loaded — only warehouse_manager or fleet_manager confirms
+    // Truck owner just moves to at_pickup, warehouse manager confirms the load
     if (newStatus === 'loaded') {
+      if (userRole !== 'warehouse_manager' && userRole !== 'fleet_manager' && userRole !== 'admin') {
+        toast.error('Only Warehouse Manager or Fleet Manager can confirm loading')
+        return
+      }
       setLoadedCBM(totalCBM.toFixed(3))
       setUnloadedItems('')
       setLoadingNote('')
@@ -951,13 +955,63 @@ export default function JobDetailPage() {
                 )}
               </div>
 
-              {/* Items not loaded */}
-              <div>
-                <label className="form-label">Items NOT Loaded (if any)</label>
-                <textarea className="form-input" rows={2}
-                  placeholder="e.g. 2 units Refrigerator - too big for truck, 1 unit Washing Machine"
-                  value={unloadedItems} onChange={e => setUnloadedItems(e.target.value)} />
-              </div>
+              {/* Items not loaded - select from shipment items */}
+              {job?.shipment_items && job.shipment_items.length > 0 ? (
+                <div>
+                  <label className="form-label">Items NOT Loaded (tap to select)</label>
+                  <div className="space-y-2">
+                    {job.shipment_items.map((item: any) => {
+                      const itemKey = item.id
+                      const deductedQty = (JSON.parse(unloadedItems || '{}'))[itemKey]?.qty || 0
+                      return (
+                        <div key={itemKey} className="bg-bg-tertiary rounded-lg p-2.5">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-text-primary">{item.item_name}</span>
+                            <span className="text-xs text-text-muted">×{item.quantity} · {item.total_cbm?.toFixed(3)} CBM</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-text-muted">Not loaded:</span>
+                            <input type="number" min="0" max={item.quantity}
+                              className="form-input text-xs w-16 py-1"
+                              placeholder="0"
+                              value={deductedQty || ''}
+                              onChange={e => {
+                                const qty = parseInt(e.target.value) || 0
+                                const current = JSON.parse(unloadedItems || '{}')
+                                if (qty === 0) {
+                                  delete current[itemKey]
+                                } else {
+                                  current[itemKey] = { name: item.item_name, qty, cbm: (item.cbm_per_item || 0) * qty }
+                                }
+                                setUnloadedItems(JSON.stringify(current))
+                                // Recalculate actual CBM
+                                const totalDeductedCBM = Object.values(current).reduce((s: number, v: any) => s + (v.cbm || 0), 0)
+                                setLoadedCBM((totalCBM - totalDeductedCBM).toFixed(3))
+                              }}
+                            />
+                            <span className="text-xs text-text-muted">units</span>
+                            {deductedQty > 0 && (
+                              <span className="text-xs text-warning">-{((item.cbm_per_item || 0) * deductedQty).toFixed(3)} CBM</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  {JSON.parse(unloadedItems || '{}') && Object.keys(JSON.parse(unloadedItems || '{}')).length > 0 && (
+                    <div className="mt-2 p-2 rounded text-xs" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>
+                      ⚠️ Total deducted CBM: {Object.values(JSON.parse(unloadedItems || '{}')).reduce((s: number, v: any) => s + (v.cbm || 0), 0).toFixed(3)} CBM
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <label className="form-label">Items NOT Loaded (if any)</label>
+                  <textarea className="form-input" rows={2}
+                    placeholder="e.g. 2 units Refrigerator - too big, 1 unit Washing Machine"
+                    value={unloadedItems} onChange={e => setUnloadedItems(e.target.value)} />
+                </div>
+              )}
 
               {/* Note */}
               <div>

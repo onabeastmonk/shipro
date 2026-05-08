@@ -61,6 +61,15 @@ export default function VerificationPage() {
       verified_at: new Date().toISOString(),
     }).eq('id', ownerId)
 
+    // Get fleet manager info
+    const { data: fleetMgr } = await supabase.from('profiles').select('full_name, contact_number').eq('id', userId).single()
+
+    if (verified) {
+      // Auto chat message from fleet manager to truck owner
+      const msg = `✅ Hi! Your Truck Owner account has been VERIFIED by Fleet Manager ${fleetMgr?.full_name || 'Fleet Manager'}. You can now register trucks and apply for job orders. For inquiries contact: ${fleetMgr?.contact_number || '—'}`
+      await supabase.from('messages').insert({ sender_id: userId, receiver_id: ownerId, content: msg })
+    }
+
     await supabase.from('notifications').insert({
       user_id: ownerId,
       type: 'general',
@@ -85,11 +94,27 @@ export default function VerificationPage() {
       await supabase.from('profiles').update({ is_verified: true, verified_by: userId, verified_at: new Date().toISOString() }).eq('id', driverId)
     }
 
+    // Get fleet manager, driver, and truck owner info
+    const { data: fleetMgr } = await supabase.from('profiles').select('full_name, contact_number').eq('id', userId).single()
+    const { data: driverProfile } = await supabase.from('profiles').select('full_name, owner_id').eq('id', driverId).single()
+
+    if (approve) {
+      // Message to driver
+      const driverMsg = `✅ Congratulations ${driverProfile?.full_name}! Your driver application has been VERIFIED and APPROVED by Fleet Manager ${fleetMgr?.full_name}. You are now an active driver in the system. For inquiries: ${fleetMgr?.contact_number || '—'}`
+      await supabase.from('messages').insert({ sender_id: userId, receiver_id: driverId, content: driverMsg })
+
+      // Message to truck owner if driver has one
+      if (driverProfile?.owner_id) {
+        const ownerMsg = `✅ Your driver ${driverProfile?.full_name} has been VERIFIED and APPROVED by Fleet Manager ${fleetMgr?.full_name}. They are now active and can be assigned to job orders.`
+        await supabase.from('messages').insert({ sender_id: userId, receiver_id: driverProfile.owner_id, content: ownerMsg })
+      }
+    }
+
     await supabase.from('notifications').insert({
       user_id: driverId,
       type: 'application',
       title: approve ? '✅ Driver Verified!' : '❌ Application Rejected',
-      body: approve ? 'Fleet manager has verified your driver account. You can now receive job assignments.' : `Application rejected by fleet manager. ${remarks || ''}`,
+      body: approve ? 'Fleet manager has verified your driver account.' : `Application rejected. ${remarks || ''}`,
     })
 
     toast.success(approve ? 'Driver verified!' : 'Application rejected')
@@ -101,11 +126,30 @@ export default function VerificationPage() {
       verification_status: approved ? 'approved' : 'rejected',
     }).eq('id', truckId)
 
+    // Get truck details and fleet manager info
+    const { data: truck } = await supabase.from('trucks').select('plate_number, truck_type_label, cbm_capacity').eq('id', truckId).single()
+    const { data: fleetMgr } = await supabase.from('profiles').select('full_name, contact_number').eq('id', userId).single()
+
+    if (approved && truck) {
+      const msg = `✅ Your truck has been VERIFIED and APPROVED!
+
+🚛 Truck Details:
+• Plate: ${truck.plate_number}
+• Type: ${truck.truck_type_label}
+• CBM: ${truck.cbm_capacity}
+
+Verified by Fleet Manager: ${fleetMgr?.full_name}
+Contact: ${fleetMgr?.contact_number || '—'}
+
+Your truck is now eligible for job assignments!`
+      await supabase.from('messages').insert({ sender_id: userId, receiver_id: ownerId, content: msg })
+    }
+
     await supabase.from('notifications').insert({
       user_id: ownerId,
       type: 'general',
       title: approved ? '✅ Truck Approved!' : '❌ Truck Rejected',
-      body: approved ? 'Your truck has been verified and approved.' : 'Your truck registration was rejected.',
+      body: approved ? `Your truck ${truck?.plate_number} has been verified and approved.` : 'Your truck registration was rejected.',
     })
 
     toast.success(approved ? 'Truck approved!' : 'Truck rejected')
