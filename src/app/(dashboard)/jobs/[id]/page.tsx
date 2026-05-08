@@ -31,6 +31,7 @@ export default function JobDetailPage() {
   const [myApplication, setMyApplication] = useState<any>(null)
   const [showApproveConfirm, setShowApproveConfirm] = useState<any>(null)
   const [viewTruckDetails, setViewTruckDetails] = useState<any>(null)
+  const [applicantDrivers, setApplicantDrivers] = useState<any[]>([])
   const [myDrivers, setMyDrivers] = useState<any[]>([])
   const [selectedDriverId, setSelectedDriverId] = useState<string>('')
   const [helperName, setHelperName] = useState<string>('')
@@ -858,7 +859,19 @@ export default function JobDetailPage() {
                           {applicant.truck?.verification_status === 'approved' ? '✓ Verified' : '⚠ Unverified'}
                         </span>
                         <button
-                          onClick={() => setViewTruckDetails(applicant)}
+                          onClick={async () => {
+                            setViewTruckDetails(applicant)
+                            setApplicantDrivers([])
+                            const ownerId = applicant.driver_id
+                            const [{ data: profileDrvs }, { data: manualDrvs }] = await Promise.all([
+                              supabase.from('profiles').select('id, full_name, contact_number, is_verified').eq('owner_id', ownerId).eq('role', 'driver'),
+                              supabase.from('truck_drivers').select('id, full_name, contact_number, status').eq('owner_id', ownerId),
+                            ])
+                            setApplicantDrivers([
+                              ...(profileDrvs || []).map((d: any) => ({ ...d, source: 'profile' })),
+                              ...(manualDrvs || []).map((d: any) => ({ ...d, source: 'manual', is_verified: d.status === 'active' })),
+                            ])
+                          }}
                           style={{ background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.4)', color: '#60a5fa', borderRadius: '999px', padding: '1px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}
                         >
                           🔍 View Full Details
@@ -1065,17 +1078,25 @@ export default function JobDetailPage() {
                 </div>
               </div>
 
-              {/* Driver & Helper */}
+              {/* Registered Drivers & Helpers */}
               <div>
-                <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Driver & Helper</div>
+                <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Registered Drivers & Helpers</div>
                 <div className="bg-bg-tertiary rounded-lg p-3 space-y-2">
-                  {viewTruckDetails.selected_helper_name ? (
-                    <>
-                      <DetailRow label="Driver / Helper Name" value={viewTruckDetails.selected_helper_name} highlight />
-                      <DetailRow label="Contact" value={viewTruckDetails.selected_helper_contact || '—'} />
-                    </>
+                  {applicantDrivers.length === 0 ? (
+                    <p className="text-xs text-text-muted italic">No registered drivers or helpers.</p>
                   ) : (
-                    <p className="text-xs text-text-muted italic">No driver or helper specified.</p>
+                    applicantDrivers.map((d: any) => (
+                      <div key={`${d.source}-${d.id}`} className="flex items-center justify-between py-1 border-b border-border last:border-0">
+                        <div>
+                          <div className="text-xs font-semibold text-text-primary">{d.full_name}</div>
+                          {d.contact_number && <div className="text-xs text-text-muted">{d.contact_number}</div>}
+                        </div>
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${d.is_verified ? 'text-success' : 'text-text-muted'}`}
+                          style={{ background: d.is_verified ? 'rgba(34,197,94,0.15)' : 'rgba(255,255,255,0.05)', border: `1px solid ${d.is_verified ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.1)'}` }}>
+                          {d.is_verified ? '✓ Verified' : d.source === 'manual' ? 'Registered' : 'Unverified'}
+                        </span>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
