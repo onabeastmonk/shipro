@@ -507,6 +507,48 @@ export default function JobDetailPage() {
             </div>
           </div>
 
+          {/* CBM Breakdown if actual CBM differs from target */}
+          {(job as any).actual_cbm > 0 && (job as any).actual_cbm !== totalCBM && (job as any).pricing_mode === 'per_cbm' && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="text-xs font-bold text-text-muted uppercase mb-2">📦 CBM Breakdown</div>
+              <div className="bg-bg-tertiary rounded-lg p-3 space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-text-muted">Target CBM</span>
+                  <span className="font-semibold text-text-primary">{totalCBM.toFixed(3)} CBM</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-text-muted">Actual Loaded</span>
+                  <span className="font-bold text-success">{Number((job as any).actual_cbm).toFixed(3)} CBM</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-border pt-1.5">
+                  <span className="text-warning font-semibold">CBM Shortfall</span>
+                  <span className="font-bold text-warning">-{(totalCBM - Number((job as any).actual_cbm)).toFixed(3)} CBM</span>
+                </div>
+                <div className="flex justify-between text-xs border-t border-border pt-1.5">
+                  <span className="text-text-muted">Target Pay</span>
+                  <span className="text-text-secondary line-through">{formatCurrency((job as any).rate_per_cbm * totalCBM)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-success font-bold">Actual Pay</span>
+                  <span className="font-heading text-base font-bold text-success">{formatCurrency((job as any).rate_per_cbm * (job as any).actual_cbm)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-danger">Pay Deducted</span>
+                  <span className="font-bold text-danger">-{formatCurrency((job as any).rate_per_cbm * (totalCBM - Number((job as any).actual_cbm)))}</span>
+                </div>
+              </div>
+
+              {/* Show which items were not loaded from loading log */}
+              {job.status_logs?.find((l: any) => l.status === 'loaded')?.note && (
+                <div className="mt-2 p-2.5 rounded-lg text-xs"
+                  style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)' }}>
+                  <div className="font-bold text-warning mb-1">⚠️ Loading Note</div>
+                  <div className="text-text-secondary">{job.status_logs?.find((l: any) => l.status === 'loaded')?.note}</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {job.goods_description && (
             <div className="mt-3 pt-3 border-t border-border">
               <span className="text-xs text-text-muted">Goods</span>
