@@ -1125,12 +1125,14 @@ export default function JobDetailPage() {
               {(() => {
                 const nameRaw = viewTruckDetails.selected_helper_name || ''
                 const contactRaw = viewTruckDetails.selected_helper_contact || ''
-                // parse "Name ✓ Verified | Helper: HelperName" format
+                // name uses ' | ' separator: "DriverName ✓ Verified | Helper: HelperName"
                 const nameParts = nameRaw.split(' | ')
-                const contactParts = contactRaw.split(' | ')
+                // contact uses '|' separator: "profile:UUID|phone|Helper: phone"
+                const contactParts = contactRaw.split('|')
                 const driverEntry = nameParts[0] || null
                 const helperEntry = nameParts.find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '') || null
-                const driverContact = contactParts[0]?.startsWith('Helper:') ? null : contactParts[0] || null
+                const driverProfileId = contactParts.find((p: string) => p.startsWith('profile:'))?.replace('profile:', '') || null
+                const driverContact = contactParts.find((p: string) => !p.startsWith('profile:') && !p.startsWith('Helper:')) || null
                 const helperContact = contactParts.find((p: string) => p.startsWith('Helper:'))?.replace('Helper: ', '') || null
                 const driverVerified = driverEntry?.includes('✓ Verified')
                 const driverName = driverEntry?.replace(' ✓ Verified', '').replace(' ✓', '') || null
@@ -1139,27 +1141,60 @@ export default function JobDetailPage() {
                     <div className="text-xs font-bold text-text-muted uppercase tracking-widest mb-2">Driver & Helper</div>
                     <div className="bg-bg-tertiary rounded-lg p-3 space-y-3">
                       {driverName ? (
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <div className="text-xs text-text-muted mb-0.5">Driver</div>
-                            <div className="text-sm font-semibold text-text-primary">{driverName}</div>
-                            {driverContact && <div className="text-xs text-text-muted">{driverContact}</div>}
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-blue-500/20 border border-blue-500/40 flex items-center justify-center text-sm font-bold text-blue-400 flex-shrink-0">
+                            {driverName.charAt(0).toUpperCase()}
                           </div>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 mt-4"
-                            style={driverVerified
-                              ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
-                              : { background: 'rgba(255,255,255,0.05)', color: '#a0a0a0', border: '1px solid rgba(255,255,255,0.1)' }}>
-                            {driverVerified ? '✓ Verified' : 'Unverified'}
-                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-text-muted mb-0.5">Driver</div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <div className="text-sm font-semibold text-text-primary">{driverName}</div>
+                              <span className="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                                style={driverVerified
+                                  ? { background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }
+                                  : { background: 'rgba(255,255,255,0.05)', color: '#a0a0a0', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                {driverVerified ? '✓ Verified' : 'Unverified'}
+                              </span>
+                            </div>
+                            {driverContact && <div className="text-xs text-text-muted mt-0.5">📞 {driverContact}</div>}
+                          </div>
+                          <div className="flex flex-col gap-1.5 flex-shrink-0">
+                            {driverProfileId && (
+                              <a href={`/chat/${driverProfileId}`}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold"
+                                style={{ background: 'rgba(96,165,250,0.2)', border: '1.5px solid #60a5fa', color: '#60a5fa', textDecoration: 'none' }}>
+                                💬 Chat
+                              </a>
+                            )}
+                            {driverContact && (
+                              <a href={`tel:${driverContact}`}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold"
+                                style={{ background: 'rgba(34,197,94,0.2)', border: '1.5px solid #22c55e', color: '#22c55e', textDecoration: 'none' }}>
+                                📞 Call
+                              </a>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         <p className="text-xs text-text-muted italic">No driver specified.</p>
                       )}
                       {helperEntry && (
-                        <div className="border-t border-border pt-2">
-                          <div className="text-xs text-text-muted mb-0.5">Helper / Pahinante</div>
-                          <div className="text-sm font-semibold text-text-primary">{helperEntry}</div>
-                          {helperContact && <div className="text-xs text-text-muted">{helperContact}</div>}
+                        <div className="border-t border-border pt-3 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-yellow-500/20 border border-yellow-500/40 flex items-center justify-center text-sm font-bold text-yellow-400 flex-shrink-0">
+                            {helperEntry.charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-text-muted mb-0.5">Helper / Pahinante</div>
+                            <div className="text-sm font-semibold text-text-primary">{helperEntry}</div>
+                            {helperContact && <div className="text-xs text-text-muted mt-0.5">📞 {helperContact}</div>}
+                          </div>
+                          {helperContact && (
+                            <a href={`tel:${helperContact}`}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold flex-shrink-0"
+                              style={{ background: 'rgba(34,197,94,0.2)', border: '1.5px solid #22c55e', color: '#22c55e', textDecoration: 'none' }}>
+                              📞 Call
+                            </a>
+                          )}
                         </div>
                       )}
                     </div>
