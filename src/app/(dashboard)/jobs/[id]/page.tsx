@@ -170,14 +170,15 @@ export default function JobDetailPage() {
     }
     setApplying(true)
     try {
+      const selectedDriver = myDrivers.find((d: any) => d.id === selectedDriverId)
       const { error } = await supabase.from('job_applicants').insert({
         job_order_id: id,
         truck_id: selectedTruckId,
         driver_id: userId,
         status: 'pending',
-        selected_driver_id: selectedDriverId || null,
-        selected_helper_name: helperName || null,
-        selected_helper_contact: helperContact || null,
+        selected_driver_id: null,
+        selected_helper_name: selectedDriver ? selectedDriver.full_name : (helperName || null),
+        selected_helper_contact: selectedDriver ? (selectedDriver.contact_number || null) : (helperContact || null),
       })
       if (error) throw error
 
