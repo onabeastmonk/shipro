@@ -56,13 +56,22 @@ export default function JobDetailPage() {
         setUserTrucks(trucks || [])
         if (trucks && trucks.length > 0) setSelectedTruckId(trucks[0].id)
 
-        const { data: drivers } = await supabase
-          .from('profiles')
-          .select('id, full_name, contact_number, email, is_verified')
-          .eq('owner_id', session.user.id)
-          .eq('role', 'driver')
-          .order('full_name')
-        setMyDrivers(drivers || [])
+        const [{ data: profileDrivers }, { data: manualDrivers }] = await Promise.all([
+          supabase.from('profiles')
+            .select('id, full_name, contact_number, is_verified')
+            .eq('owner_id', session.user.id)
+            .eq('role', 'driver')
+            .order('full_name'),
+          supabase.from('truck_drivers')
+            .select('id, full_name, contact_number, status')
+            .eq('owner_id', session.user.id)
+            .order('full_name'),
+        ])
+        const combined = [
+          ...(profileDrivers || []).map((d: any) => ({ ...d, source: 'profile', is_verified: d.is_verified })),
+          ...(manualDrivers || []).map((d: any) => ({ ...d, source: 'manual', is_verified: d.status === 'active' })),
+        ]
+        setMyDrivers(combined)
       }
 
       await loadJob(session.user.id)
@@ -170,9 +179,9 @@ export default function JobDetailPage() {
     }
     setApplying(true)
     try {
-      const selectedDriver = myDrivers.find((d: any) => d.id === selectedDriverId)
+      const selectedDriver = myDrivers.find((d: any) => `${d.source}-${d.id}` === selectedDriverId)
       const driverLabel = selectedDriver
-        ? `${selectedDriver.full_name}${selectedDriver.is_verified ? ' ✓' : ''}`
+        ? `${selectedDriver.full_name}${selectedDriver.is_verified ? ' ✓ Verified' : ''}`
         : null
       const helperLabel = helperName || null
       const combinedName = [driverLabel, helperLabel ? `Helper: ${helperLabel}` : null].filter(Boolean).join(' | ') || null
@@ -737,10 +746,10 @@ export default function JobDetailPage() {
                     </div>
                   ) : (
                     <select className="form-input" value={selectedDriverId} onChange={e => setSelectedDriverId(e.target.value)}>
-                      <option value="">— Select driver (optional) —</option>
+                      <option value="">— Select driver / helper (optional) —</option>
                       {myDrivers.map((d: any) => (
-                        <option key={d.id} value={d.id}>
-                          {d.full_name} · {d.contact_number || '—'}{d.is_verified ? ' ✓' : ''}
+                        <option key={`${d.source}-${d.id}`} value={`${d.source}-${d.id}`}>
+                          {d.full_name}{d.contact_number ? ` · ${d.contact_number}` : ''}{d.is_verified ? ' ✓ Verified' : d.source === 'manual' ? ' (registered)' : ''}
                         </option>
                       ))}
                     </select>
