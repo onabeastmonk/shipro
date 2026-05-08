@@ -488,8 +488,14 @@ export default function JobDetailPage() {
               <p className="font-heading text-base font-bold text-text-primary mt-0.5">
                 {(job as any).pricing_mode === 'per_cbm' && (job as any).rate_per_cbm ? (
                   <div>
-                    {job.total_cbm && <div className="font-heading text-2xl font-bold text-text-primary">{formatCurrency((job as any).rate_per_cbm * job.total_cbm)}</div>}
-                    {(job as any).actual_cbm > 0 && <div className="font-heading text-lg font-bold text-success">{formatCurrency((job as any).rate_per_cbm * (job as any).actual_cbm)}</div>}
+                    {(job as any).actual_cbm > 0 ? (
+                      <>
+                        <div className="font-heading text-2xl font-bold text-success">{formatCurrency((job as any).rate_per_cbm * (job as any).actual_cbm)}</div>
+                        <div className="font-heading text-sm text-text-secondary line-through">{formatCurrency((job as any).rate_per_cbm * totalCBM)}</div>
+                      </>
+                    ) : (
+                      <div className="font-heading text-2xl font-bold text-text-primary">{formatCurrency((job as any).rate_per_cbm * totalCBM)}</div>
+                    )}
                     <div className="text-xs text-text-muted mt-0.5">₱{Number((job as any).rate_per_cbm).toLocaleString()}/CBM</div>
                   </div>
                 ) : job.total_rate ? formatCurrency(job.total_rate) : (job as any).base_rate ? formatCurrency((job as any).base_rate) : '—'}
