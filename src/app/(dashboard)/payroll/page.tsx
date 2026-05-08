@@ -32,7 +32,7 @@ export default function PayrollPage() {
     try {
       const { data, error } = await supabase
         .from('payslips')
-        .select('*, driver:profiles!driver_id(id, full_name, email, contact_number, company_name, owner_id, role), job_order:job_orders(job_number, client_name)')
+        .select('*, driver:profiles!driver_id(id, full_name, email, contact_number, company_name, owner_id, role), job_order:job_orders(job_number, client_name), job_order_id, actual_cbm, target_cbm, rate_per_cbm')
         .order('delivery_date', { ascending: false })
       if (!error) setPayslips((data || []) as any)
     } catch { } finally { setLoading(false) }
@@ -362,7 +362,25 @@ function PayslipCard({ payslip, onStatusChange }: { payslip: Payslip; onStatusCh
             <div className="bg-bg-tertiary rounded p-2.5 text-xs text-text-secondary whitespace-pre-line">{payslip.remarks}</div>
           )}
           <div className="flex gap-2">
-            <button onClick={async () => { await generatePayslipPDF({ payslip_number: payslip.payslip_number, driver_name: driverName, job_number: jobNum, delivery_date: payslip.delivery_date, pickup_location: payslip.pickup_location, dropoff_location: payslip.dropoff_location, truck_type_label: payslip.truck_type_label, base_rate: payslip.base_rate, additional_charges: payslip.additional_charges, fuel_allowance: payslip.fuel_allowance, toll_fee: payslip.toll_fee, parking_fee: payslip.parking_fee, deductions: payslip.deductions, total_amount: payslip.total_amount, payment_status: payslip.payment_status, remarks: payslip.remarks }) }}
+            <button onClick={async () => {
+              // Fetch shipment items for this job
+              let items: any[] = []
+              if ((payslip as any).job_order_id) {
+                const { data } = await supabase.from('shipment_items').select('item_name, quantity, cbm_per_item, total_cbm').eq('job_order_id', (payslip as any).job_order_id)
+                items = data || []
+              }
+              await generatePayslipPDF({
+                payslip_number: payslip.payslip_number, driver_name: driverName, job_number: jobNum,
+                delivery_date: payslip.delivery_date, pickup_location: payslip.pickup_location,
+                dropoff_location: payslip.dropoff_location, truck_type_label: payslip.truck_type_label,
+                base_rate: payslip.base_rate, additional_charges: payslip.additional_charges,
+                fuel_allowance: payslip.fuel_allowance, toll_fee: payslip.toll_fee, parking_fee: payslip.parking_fee,
+                deductions: payslip.deductions, total_amount: payslip.total_amount,
+                payment_status: payslip.payment_status, remarks: payslip.remarks,
+                actual_cbm: (payslip as any).actual_cbm, target_cbm: (payslip as any).target_cbm,
+                rate_per_cbm: (payslip as any).rate_per_cbm, items,
+              })
+            }}
               className="btn btn-sm btn-outline flex items-center gap-1 flex-1">
               <Printer size={12} /> Print
             </button>

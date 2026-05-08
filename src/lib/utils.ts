@@ -149,112 +149,169 @@ export async function generatePayslipPDF(payslip: {
   total_amount: number
   payment_status: string
   remarks?: string
+  actual_cbm?: number
+  target_cbm?: number
+  rate_per_cbm?: number
+  items?: { item_name: string; quantity: number; cbm_per_item: number; total_cbm: number }[]
 }) {
-  // Dynamic import to avoid SSR issues
   const jsPDF = (await import('jspdf')).default
   const autoTable = (await import('jspdf-autotable')).default
 
   const doc = new jsPDF()
-  
+  const pageW = 210
+  const margin = 14
+  const contentW = pageW - margin * 2
+
   // Header
-  doc.setFontSize(24)
+  doc.setFontSize(22)
   doc.setFont('helvetica', 'bold')
-  doc.text('shiPRO', 14, 20)
-  
-  doc.setFontSize(10)
+  doc.setTextColor(0)
+  doc.text('shiPRO', margin, 20)
+
+  doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(100)
-  doc.text('Fleet Management & Logistics', 14, 27)
-  doc.text('shiPRO Logistics Corp. | admin@shipro.ph', 14, 33)
+  doc.text('Fleet Management & Logistics', margin, 27)
+  doc.text('shiPRO Logistics Corp. | admin@shipro.ph', margin, 32)
 
-  // Payslip title
   doc.setFontSize(16)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(0)
-  doc.text('PAYSLIP', 196, 20, { align: 'right' })
-  doc.setFontSize(10)
+  doc.text('PAYSLIP', pageW - margin, 20, { align: 'right' })
+  doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(100)
-  doc.text(payslip.payslip_number, 196, 27, { align: 'right' })
-  doc.text(formatDate(new Date()), 196, 33, { align: 'right' })
+  doc.text(payslip.payslip_number, pageW - margin, 27, { align: 'right' })
+  doc.text(formatDate(new Date()), pageW - margin, 32, { align: 'right' })
 
-  // Divider
-  doc.setDrawColor(200)
-  doc.line(14, 40, 196, 40)
+  doc.setDrawColor(180)
+  doc.line(margin, 37, pageW - margin, 37)
 
-  // Driver & Job Info
-  doc.setFontSize(10)
+  // Info grid — two columns, text wrapped
+  let y = 46
+  const col1 = margin
+  const col2 = margin + contentW / 2 + 4
+  const colW = contentW / 2 - 4
+
+  function label(text: string, x: number, cy: number) {
+    doc.setFontSize(8)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(120)
+    doc.text(text, x, cy)
+  }
+  function value(text: string, x: number, cy: number, maxW: number): number {
+    doc.setFontSize(10)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(0)
+    const lines = doc.splitTextToSize(text || '-', maxW)
+    doc.text(lines, x, cy)
+    return lines.length
+  }
+
+  label('TRUCK OWNER / COMPANY', col1, y)
+  label('JOB ORDER', col2, y)
+  y += 5
+  const r1 = value(payslip.driver_name, col1, y, colW)
+  value(payslip.job_number, col2, y, colW)
+  y += Math.max(r1, 1) * 5 + 4
+
+  label('DELIVERY DATE', col1, y)
+  label('TRUCK TYPE', col2, y)
+  y += 5
+  value(formatDate(payslip.delivery_date), col1, y, colW)
+  value(payslip.truck_type_label, col2, y, colW)
+  y += 9
+
+  label('PICKUP LOCATION', col1, y)
+  label('DROP-OFF LOCATION', col2, y)
+  y += 5
+  const r3 = value(payslip.pickup_location, col1, y, colW)
+  const r4 = value(payslip.dropoff_location, col2, y, colW)
+  y += Math.max(r3, r4) * 5 + 6
+
+  doc.setDrawColor(180)
+  doc.line(margin, y, pageW - margin, y)
+  y += 6
+
+  // Inventory items table (if provided)
+  if (payslip.items && payslip.items.length > 0) {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(0)
+    doc.text('CARGO / INVENTORY', margin, y)
+    y += 2
+    autoTable(doc, {
+      startY: y,
+      head: [['Item', 'Qty', 'CBM/Unit', 'Total CBM']],
+      body: payslip.items.map(it => [
+        it.item_name,
+        String(it.quantity),
+        it.cbm_per_item.toFixed(3),
+        it.total_cbm.toFixed(3),
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
+      columnStyles: { 1: { halign: 'center' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+      margin: { left: margin, right: margin },
+    })
+    y = (doc as any).lastAutoTable.finalY + 6
+  }
+
+  // Rate breakdown table
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
   doc.setTextColor(0)
-  doc.setFont('helvetica', 'bold')
-  doc.text('DRIVER / TRUCKING COMPANY', 14, 50)
-  doc.setFont('helvetica', 'normal')
-  doc.text(payslip.driver_name, 14, 57)
+  doc.text('RATE BREAKDOWN', margin, y)
+  y += 2
 
-  doc.setFont('helvetica', 'bold')
-  doc.text('JOB ORDER', 120, 50)
-  doc.setFont('helvetica', 'normal')
-  doc.text(payslip.job_number, 120, 57)
+  const rateBody: string[][] = []
+  if (payslip.actual_cbm && payslip.rate_per_cbm) {
+    rateBody.push([`CBM Rate (${payslip.actual_cbm} CBM × ₱${payslip.rate_per_cbm.toLocaleString()}/CBM)`, formatCurrency(payslip.actual_cbm * payslip.rate_per_cbm)])
+    if (payslip.target_cbm && payslip.target_cbm > payslip.actual_cbm) {
+      const shortfall = (payslip.target_cbm - payslip.actual_cbm).toFixed(3)
+      rateBody.push([`CBM Shortfall Deduction (-${shortfall} CBM)`, `(${formatCurrency(payslip.deductions)})`])
+    }
+  } else {
+    rateBody.push(['Base Rate', formatCurrency(payslip.base_rate)])
+    if (payslip.deductions > 0) rateBody.push(['Deductions', `(${formatCurrency(payslip.deductions)})`])
+  }
+  if (payslip.additional_charges > 0) rateBody.push(['Additional Charges', formatCurrency(payslip.additional_charges)])
+  if (payslip.fuel_allowance > 0) rateBody.push(['Fuel Allowance', formatCurrency(payslip.fuel_allowance)])
+  if (payslip.toll_fee > 0) rateBody.push(['Toll Fee', formatCurrency(payslip.toll_fee)])
+  if (payslip.parking_fee > 0) rateBody.push(['Parking Fee', formatCurrency(payslip.parking_fee)])
 
-  doc.setFont('helvetica', 'bold')
-  doc.text('DELIVERY DATE', 14, 67)
-  doc.setFont('helvetica', 'normal')
-  doc.text(formatDate(payslip.delivery_date), 14, 74)
-
-  doc.setFont('helvetica', 'bold')
-  doc.text('TRUCK TYPE', 120, 67)
-  doc.setFont('helvetica', 'normal')
-  doc.text(payslip.truck_type_label, 120, 74)
-
-  doc.setFont('helvetica', 'bold')
-  doc.text('PICKUP', 14, 84)
-  doc.setFont('helvetica', 'normal')
-  doc.text(payslip.pickup_location, 14, 91)
-
-  doc.setFont('helvetica', 'bold')
-  doc.text('DROP-OFF', 120, 84)
-  doc.setFont('helvetica', 'normal')
-  doc.text(payslip.dropoff_location, 120, 91)
-
-  doc.line(14, 98, 196, 98)
-
-  // Rate Breakdown table
   autoTable(doc, {
-    startY: 104,
+    startY: y,
     head: [['Description', 'Amount']],
-    body: [
-      ['Base Rate', formatCurrency(payslip.base_rate)],
-      ['Additional Charges', formatCurrency(payslip.additional_charges)],
-      ['Fuel Allowance', formatCurrency(payslip.fuel_allowance)],
-      ['Toll Fee', formatCurrency(payslip.toll_fee)],
-      ['Parking Fee', formatCurrency(payslip.parking_fee)],
-      ['Deductions', `(${formatCurrency(payslip.deductions)})`],
-    ],
+    body: rateBody,
     foot: [['TOTAL NET PAYOUT', formatCurrency(payslip.total_amount)]],
     styles: { fontSize: 10 },
-    headStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255] },
-    footStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 12 },
+    headStyles: { fillColor: [40, 40, 40], textColor: [255, 255, 255] },
+    footStyles: { fillColor: [20, 20, 20], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 11 },
     columnStyles: { 1: { halign: 'right' } },
-    margin: { left: 14, right: 14 },
+    margin: { left: margin, right: margin },
   })
 
-  const finalY = (doc as any).lastAutoTable.finalY + 10
+  const finalY = (doc as any).lastAutoTable.finalY + 8
 
-  // Payment status
+  doc.setFontSize(10)
   doc.setFont('helvetica', 'bold')
-  doc.text(`Payment Status: ${payslip.payment_status.toUpperCase()}`, 14, finalY)
+  doc.setTextColor(0)
+  doc.text(`Payment Status: ${payslip.payment_status.toUpperCase()}`, margin, finalY)
 
   if (payslip.remarks) {
+    const remarkLines = doc.splitTextToSize(`Remarks: ${payslip.remarks}`, contentW)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(100)
-    doc.text(`Remarks: ${payslip.remarks}`, 14, finalY + 8)
+    doc.text(remarkLines, margin, finalY + 7)
   }
 
   // Footer
   doc.setFontSize(8)
   doc.setTextColor(150)
-  doc.text('This document is computer-generated. No signature required.', 14, 280)
-  doc.text('shiPRO Fleet Management System', 196, 280, { align: 'right' })
+  doc.text('This document is computer-generated. No signature required.', margin, 287)
+  doc.text('shiPRO Fleet Management System', pageW - margin, 287, { align: 'right' })
 
   doc.save(`${payslip.payslip_number}.pdf`)
 }

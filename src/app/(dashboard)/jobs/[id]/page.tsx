@@ -396,7 +396,7 @@ export default function JobDetailPage() {
         const { error: payError } = await supabase.from('payslips').insert({
           payslip_number: psNum,
           job_order_id: id,
-          driver_id: job.assigned_driver_id,
+          driver_id: (job.truck as any)?.owner_id || job.assigned_driver_id,
           delivery_date: job.delivery_date,
           pickup_location: job.pickup_location,
           dropoff_location: job.dropoff_location,
