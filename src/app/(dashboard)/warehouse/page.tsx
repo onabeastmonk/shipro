@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
-import { Plus, MapPin, Search, Edit } from 'lucide-react'
+import { Plus, MapPin, Search, Edit, Package, TrendingUp, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 
@@ -17,6 +17,23 @@ const WAREHOUSE_TYPES = [
   { value: 'hub', label: 'Hub / Depot', icon: '🔄' },
   { value: 'client', label: 'Client Location', icon: '📍' },
 ]
+
+const STATUS_COLORS: Record<string, { color: string; bg: string; border: string }> = {
+  in_warehouse: { color: '#60a5fa', bg: 'rgba(96,165,250,0.12)',  border: 'rgba(96,165,250,0.3)' },
+  reserved:     { color: '#a78bfa', bg: 'rgba(167,139,250,0.12)', border: 'rgba(167,139,250,0.3)' },
+  loading:      { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.3)' },
+  loaded:       { color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  border: 'rgba(251,146,60,0.3)' },
+  in_transit:   { color: '#38bdf8', bg: 'rgba(56,189,248,0.12)',  border: 'rgba(56,189,248,0.3)' },
+  delivered:    { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   border: 'rgba(34,197,94,0.3)' },
+  returned:     { color: '#f87171', bg: 'rgba(248,113,113,0.12)', border: 'rgba(248,113,113,0.3)' },
+  cancelled:    { color: '#71717a', bg: 'rgba(113,113,122,0.12)', border: 'rgba(113,113,122,0.3)' },
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  in_warehouse: 'In Warehouse', reserved: 'Reserved', loading: 'Loading',
+  loaded: 'Loaded', in_transit: 'In Transit', delivered: 'Delivered',
+  returned: 'Returned', cancelled: 'Cancelled',
+}
 
 const EMPTY_FORM = {
   name: '', address: '', lat: '', lng: '',
@@ -45,11 +62,8 @@ export default function WarehousePage() {
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
       const role = profile?.role || null
       setUserRole(role)
-
-      // Only admin, fleet_manager, warehouse_manager may access warehouse
       if (role === 'driver' || role === 'truck_owner' || role === 'client') {
-        router.push('/dashboard')
-        return
+        router.push('/dashboard'); return
       }
       await loadWarehouses()
     }
@@ -59,7 +73,7 @@ export default function WarehousePage() {
   async function loadWarehouses() {
     const { data, error } = await supabase
       .from('warehouses')
-      .select('*, inventory:warehouse_inventory(id, quantity, cbm_per_unit), outbound:warehouse_movements!from_warehouse_id(id, status), inbound:warehouse_movements!to_warehouse_id(id, status)')
+      .select('*, inventory:warehouse_inventory(id, quantity, cbm_per_unit, status), outbound:warehouse_movements!from_warehouse_id(id, status), inbound:warehouse_movements!to_warehouse_id(id, status)')
       .order('created_at', { ascending: false })
     if (error) console.error('Warehouse load error:', error)
     setWarehouses(data || [])
@@ -98,7 +112,6 @@ export default function WarehousePage() {
         lat: form.lat ? parseFloat(form.lat) : null,
         lng: form.lng ? parseFloat(form.lng) : null,
       }
-
       if (editId) {
         const { error } = await supabase.from('warehouses').update(payload).eq('id', editId)
         if (error) throw error
@@ -108,7 +121,6 @@ export default function WarehousePage() {
         if (error) throw error
         toast.success('Warehouse created!')
       }
-
       setShowForm(false)
       setEditId(null)
       setForm({ ...EMPTY_FORM })
@@ -118,56 +130,93 @@ export default function WarehousePage() {
     } finally { setSaving(false) }
   }
 
+  // ── Derived stats ──────────────────────────────────────────────────────────
+
+  const globalStats = useMemo(() => {
+    let totalSkus = 0, totalUnits = 0, totalCBM = 0, totalInTransit = 0
+    const allStatuses: Record<string, number> = {}
+    warehouses.forEach(w => {
+      totalSkus += w.inventory?.length || 0
+      w.inventory?.forEach((i: any) => {
+        totalUnits += i.quantity || 0
+        totalCBM += (i.quantity * i.cbm_per_unit) || 0
+        const st = i.status || 'in_warehouse'
+        allStatuses[st] = (allStatuses[st] || 0) + 1
+      })
+      totalInTransit +=
+        (w.outbound?.filter((m: any) => m.status === 'in_transit').length || 0) +
+        (w.inbound?.filter((m: any) => m.status === 'in_transit').length || 0)
+    })
+    return { totalSkus, totalUnits, totalCBM, totalInTransit, allStatuses }
+  }, [warehouses])
+
   const filtered = warehouses.filter(w =>
     w.name.toLowerCase().includes(search.toLowerCase()) ||
     w.address.toLowerCase().includes(search.toLowerCase())
   )
 
-  const totalItems = warehouses.reduce((s, w) => s + (w.inventory?.length || 0), 0)
-  const activeMovements = warehouses.reduce((s, w) =>
-    s + (w.outbound?.filter((m: any) => m.status === 'in_transit').length || 0)
-    + (w.inbound?.filter((m: any) => m.status === 'in_transit').length || 0), 0)
+  const canManage = userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager'
 
   return (
-    <div className="max-w-2xl mx-auto p-4">
+    <div className="max-w-4xl mx-auto p-4">
+      {/* ── Header ── */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-text-primary">Warehouses</h1>
-          <p className="text-text-muted text-sm mt-0.5">Manage locations & inventory</p>
+          <h1 className="font-heading text-2xl font-bold text-text-primary">
+            {userRole === 'warehouse_manager' ? 'My Warehouse' : 'Warehouses'}
+          </h1>
+          <p className="text-text-muted text-sm mt-0.5">
+            {userRole === 'warehouse_manager' ? 'Inventory command center' : 'Manage locations & inventory'}
+          </p>
         </div>
-        {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
+        {canManage && (
           <button onClick={openAdd} className="btn btn-primary btn-sm flex items-center gap-1.5">
             <Plus size={14} /> Add Warehouse
           </button>
         )}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center">
-          <div className="font-heading text-2xl font-bold text-info">{warehouses.length}</div>
-          <div className="text-xs text-text-muted mt-0.5">Locations</div>
-        </div>
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center">
-          <div className="font-heading text-2xl font-bold text-success">{totalItems}</div>
-          <div className="text-xs text-text-muted mt-0.5">Items</div>
-        </div>
-        <div className="bg-bg-secondary border border-border rounded-lg p-3 text-center">
-          <div className="font-heading text-2xl font-bold text-warning">{activeMovements}</div>
-          <div className="text-xs text-text-muted mt-0.5">In Transit</div>
-        </div>
+      {/* ── Global Stats ── */}
+      <div className="grid grid-cols-4 gap-px bg-border rounded-xl overflow-hidden mb-5">
+        {[
+          { label: 'Locations', value: warehouses.length, color: 'text-info' },
+          { label: 'SKUs', value: globalStats.totalSkus, color: 'text-text-primary' },
+          { label: 'Total Units', value: globalStats.totalUnits, color: 'text-success' },
+          { label: 'In Transit', value: globalStats.totalInTransit, color: 'text-warning' },
+        ].map(s => (
+          <div key={s.label} className="bg-bg-secondary p-3 text-center">
+            <div className={cn('font-heading text-2xl font-bold', s.color)}>{s.value}</div>
+            <div className="text-xs text-text-muted mt-0.5">{s.label}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Search */}
+      {/* ── Global inventory status breakdown ── */}
+      {Object.keys(globalStats.allStatuses).length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {Object.entries(globalStats.allStatuses).map(([status, count]) => {
+            const s = STATUS_COLORS[status]
+            if (!s) return null
+            return (
+              <span key={status} className="text-xs px-2 py-1 rounded-full font-semibold"
+                style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}>
+                {STATUS_LABELS[status] || status} · {count}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Search ── */}
       <div className="relative mb-4">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
         <input className="form-input pl-9" placeholder="Search warehouses..."
           value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {/* Warehouse list */}
+      {/* ── Warehouse list ── */}
       {loading ? (
-        Array(3).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-28 rounded-lg mb-3" />)
+        Array(3).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-32 rounded-xl mb-3" />)
       ) : filtered.length === 0 ? (
         <div className="text-center py-12">
           <div className="text-5xl mb-3">🏭</div>
@@ -178,76 +227,123 @@ export default function WarehousePage() {
         <div className="space-y-3">
           {filtered.map(wh => {
             const typeInfo = WAREHOUSE_TYPES.find(t => t.value === wh.type) || WAREHOUSE_TYPES[0]
-            const itemCount = wh.inventory?.length || 0
-            const totalQty = wh.inventory?.reduce((s: number, i: any) => s + i.quantity, 0) || 0
-            const whCBM = wh.inventory?.reduce((s: number, i: any) => s + (i.quantity * i.cbm_per_unit || 0), 0) || 0
-            const inTransit = (wh.outbound?.filter((m: any) => m.status === 'in_transit').length || 0) + (wh.inbound?.filter((m: any) => m.status === 'in_transit').length || 0)
+            const totalQty = wh.inventory?.reduce((s: number, i: any) => s + (i.quantity || 0), 0) || 0
+            const whCBM = wh.inventory?.reduce((s: number, i: any) => s + ((i.quantity * i.cbm_per_unit) || 0), 0) || 0
+            const inTransit = (wh.outbound?.filter((m: any) => m.status === 'in_transit').length || 0) +
+              (wh.inbound?.filter((m: any) => m.status === 'in_transit').length || 0)
+            const skuCount = wh.inventory?.length || 0
+
+            // Status breakdown for this warehouse
+            const whStatuses: Record<string, number> = {}
+            wh.inventory?.forEach((i: any) => {
+              const st = i.status || 'in_warehouse'
+              whStatuses[st] = (whStatuses[st] || 0) + 1
+            })
+
+            // Alert conditions
+            const hasReserved = whStatuses['reserved'] > 0
+            const hasLoading = whStatuses['loading'] > 0 || whStatuses['loaded'] > 0
 
             return (
-              <div key={wh.id} className="bg-bg-secondary border border-border rounded-lg p-4 hover:border-border-secondary transition-colors">
-                <div className="flex items-start justify-between mb-2">
-                  <Link href={`/warehouse/${wh.id}`} className="flex items-center gap-2 flex-1">
-                    <span className="text-2xl">{typeInfo.icon}</span>
-                    <div>
-                      <div className="font-heading text-sm font-bold text-text-primary">{wh.name}</div>
-                      <div className="text-xs text-text-muted">{typeInfo.label}</div>
+              <div key={wh.id} className="bg-bg-secondary border border-border rounded-xl overflow-hidden hover:border-border-secondary transition-colors">
+                <div className="p-4">
+                  <div className="flex items-start justify-between mb-3">
+                    <Link href={`/warehouse/${wh.id}`} className="flex items-center gap-2.5 flex-1 min-w-0">
+                      <span className="text-2xl flex-shrink-0">{typeInfo.icon}</span>
+                      <div className="min-w-0">
+                        <div className="font-heading text-sm font-bold text-text-primary truncate">{wh.name}</div>
+                        <div className="text-xs text-text-muted">{typeInfo.label}</div>
+                      </div>
+                    </Link>
+                    <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+                      {inTransit > 0 && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-bold"
+                          style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
+                          🚛 {inTransit}
+                        </span>
+                      )}
+                      {canManage && (
+                        <button onClick={() => openEdit(wh)} className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors">
+                          <Edit size={15} className="text-text-muted" />
+                        </button>
+                      )}
                     </div>
+                  </div>
+
+                  <Link href={`/warehouse/${wh.id}`} className="block">
+                    <div className="flex items-center gap-1.5 text-xs text-text-muted mb-3">
+                      <MapPin size={11} />
+                      <span className="truncate">{wh.address}</span>
+                    </div>
+
+                    {/* Stats row */}
+                    <div className="grid grid-cols-3 gap-2 mb-3">
+                      <div className="bg-bg-tertiary rounded-lg p-2 text-center">
+                        <div className="font-bold text-sm text-text-primary">{skuCount}</div>
+                        <div className="text-xs text-text-muted">SKUs</div>
+                      </div>
+                      <div className="bg-bg-tertiary rounded-lg p-2 text-center">
+                        <div className="font-bold text-sm text-text-primary">{totalQty}</div>
+                        <div className="text-xs text-text-muted">Units</div>
+                      </div>
+                      <div className="bg-bg-tertiary rounded-lg p-2 text-center">
+                        <div className="font-bold text-sm" style={{ color: '#60a5fa' }}>{whCBM.toFixed(1)}</div>
+                        <div className="text-xs text-text-muted">CBM</div>
+                      </div>
+                    </div>
+
+                    {/* Per-warehouse status pills */}
+                    {Object.keys(whStatuses).length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {Object.entries(whStatuses).map(([status, count]) => {
+                          const s = STATUS_COLORS[status]
+                          if (!s) return null
+                          return (
+                            <span key={status} className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                              style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}>
+                              {STATUS_LABELS[status] || status} {count}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    )}
                   </Link>
-                  <div className="flex items-center gap-2">
-                    {inTransit > 0 && (
-                      <span className="text-xs px-2 py-0.5 rounded-full font-bold"
-                        style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)' }}>
-                        {inTransit} in transit
-                      </span>
-                    )}
-                    {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
-                      <button onClick={() => openEdit(wh)}
-                        className="p-1.5 rounded-md hover:bg-bg-tertiary transition-colors">
-                        <Edit size={15} className="text-text-muted" />
-                      </button>
-                    )}
-                  </div>
-                </div>
 
-                <Link href={`/warehouse/${wh.id}`}>
-                  <div className="flex items-center gap-1.5 text-xs text-text-muted mb-3">
-                    <MapPin size={11} />
-                    <span className="truncate">{wh.address}</span>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="bg-bg-tertiary rounded-md p-2 text-center">
-                      <div className="font-bold text-sm text-text-primary">{itemCount}</div>
-                      <div className="text-xs text-text-muted">Items</div>
+                  {/* Alerts */}
+                  {(hasLoading || hasReserved) && (
+                    <div className="mt-2 pt-2 border-t border-border flex flex-wrap gap-1.5">
+                      {hasLoading && (
+                        <span className="text-xs text-warning flex items-center gap-1">
+                          <AlertCircle size={11} /> Items loading/loaded
+                        </span>
+                      )}
+                      {hasReserved && (
+                        <span className="text-xs" style={{ color: '#a78bfa' }}>
+                          🔖 {whStatuses['reserved']} reserved
+                        </span>
+                      )}
                     </div>
-                    <div className="bg-bg-tertiary rounded-md p-2 text-center">
-                      <div className="font-bold text-sm text-text-primary">{totalQty}</div>
-                      <div className="text-xs text-text-muted">Units</div>
-                    </div>
-                    <div className="bg-bg-tertiary rounded-md p-2 text-center">
-                      <div className="font-bold text-sm" style={{ color: '#60a5fa' }}>{whCBM.toFixed(1)}</div>
-                      <div className="text-xs text-text-muted">CBM</div>
-                    </div>
-                  </div>
+                  )}
 
                   {wh.contact_person && (
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
                       <span className="text-xs text-text-muted">👤 {wh.contact_person}</span>
                       {wh.contact_number && (
-                        <span className="text-xs font-semibold" style={{ color: '#22c55e' }}>
+                        <a href={`tel:${wh.contact_number}`} onClick={e => e.stopPropagation()}
+                          className="text-xs font-semibold" style={{ color: '#22c55e' }}>
                           📞 {wh.contact_number}
-                        </span>
+                        </a>
                       )}
                     </div>
                   )}
-                </Link>
+                </div>
               </div>
             )
           })}
         </div>
       )}
 
-      {/* Add/Edit Warehouse Modal */}
+      {/* ─────────────────── ADD / EDIT WAREHOUSE MODAL ─────────────────── */}
       {showForm && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center">
           <div className="bg-bg-secondary w-full md:max-w-lg rounded-t-2xl md:rounded-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
@@ -280,7 +376,6 @@ export default function WarehousePage() {
                 </div>
               </div>
 
-              {/* Address with Map Picker */}
               <div>
                 <label className="form-label">Address / Location *</label>
                 <div className="flex gap-2">
@@ -337,7 +432,6 @@ export default function WarehousePage() {
         </div>
       )}
 
-      {/* Map Picker */}
       {showMapPicker && (
         <MapPicker
           initialAddress={form.address}
