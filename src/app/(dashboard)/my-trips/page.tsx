@@ -10,19 +10,11 @@ import { getJobStatusColor, formatDate } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
   AlertTriangle, MessageCircle, Phone, Navigation, MapPin,
-  Package, Clock, ChevronRight, CheckCircle,
+  Package, Clock, ChevronRight, CheckCircle, Crosshair,
 } from 'lucide-react'
 
 declare global {
   interface Window { google: any; initMyTripsMap: () => void }
-}
-
-const DRIVER_ALLOWED_STATUSES: JobStatus[] = ['accepted', 'arrived', 'delivered']
-
-const NEXT_STATUS_LABEL: Partial<Record<JobStatus, string>> = {
-  accepted:  '✅ Accept Trip',
-  arrived:   '📍 Arrived at Drop-off',
-  delivered: '📦 Mark as Delivered',
 }
 
 function sortOrder(status: string): number {
@@ -66,7 +58,7 @@ export default function TripGuidePage() {
   const [mapLoaded, setMapLoaded] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
   const [gpsStatus, setGpsStatus] = useState<'idle' | 'capturing' | 'captured' | 'denied'>('idle')
-  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [sendingNotice, setSendingNotice] = useState(false)
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null)
   const [routeError, setRouteError] = useState<string | null>(null)
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null)
@@ -391,35 +383,104 @@ export default function TripGuidePage() {
     }
   }, [userId, activeTrip, userProfile])
 
-  // ── Status update ────────────────────────────────────────────
-  async function updateStatus(tripId: string, newStatus: JobStatus) {
-    if (!userId || updatingStatus) return
-    setUpdatingStatus(true)
-    try {
-      const { error } = await supabase.from('job_orders').update({ status: newStatus }).eq('id', tripId)
-      if (error) throw error
-      await supabase.from('delivery_status_logs').insert({
-        job_order_id: tripId,
-        status: newStatus,
-        logged_by: userId,
-        location: gpsCoords ? `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}` : null,
-        note: 'Status updated by driver',
-        logged_at: new Date().toISOString(),
-      })
-      setTrips(prev => prev.map(t => t.id === tripId ? { ...t, status: newStatus } : t))
-      if (activeTrip?.id === tripId) setActiveTrip(prev => prev ? { ...prev, status: newStatus } : prev)
-      toast.success(`Status updated: ${JOB_STATUS_LABELS[newStatus]}`)
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to update status')
-    } finally {
-      setUpdatingStatus(false)
+  // ── Recenter map ─────────────────────────────────────────────
+  function recenter() {
+    if (!mapInstanceRef.current) return
+    if (gpsCoords) {
+      // Driver location known — focus there
+      mapInstanceRef.current.panTo(gpsCoords)
+      mapInstanceRef.current.setZoom(15)
+    } else if (markersRef.current.length >= 2) {
+      // No GPS but route markers exist — fit to pickup + drop-off
+      const bounds = new window.google.maps.LatLngBounds()
+      markersRef.current.forEach(m => bounds.extend(m.getPosition()))
+      mapInstanceRef.current.fitBounds(bounds, { top: 60, right: 40, bottom: 40, left: 40 })
+    } else if (markersRef.current.length === 1) {
+      mapInstanceRef.current.panTo(markersRef.current[0].getPosition())
+      mapInstanceRef.current.setZoom(14)
+    } else {
+      toast('No location available to recenter', { icon: '📍' })
     }
   }
 
-  function getNextDriverStatus(currentStatus: string): JobStatus | null {
-    const order: JobStatus[] = ['assigned', 'accepted', 'at_pickup', 'loaded', 'in_transit', 'arrived', 'delivered']
-    const currentIdx = order.indexOf(currentStatus as JobStatus)
-    return DRIVER_ALLOWED_STATUSES.find(s => order.indexOf(s) > currentIdx) || null
+  // ── Send driver arrival notice (message only — no status change) ─
+  async function sendArrivalNotice(locationType: 'pickup' | 'dropoff') {
+    if (!selectedTrip || !userId || sendingNotice) return
+    setSendingNotice(true)
+    try {
+      const truck = (selectedTrip.truck as any)
+      const truckLabel = truck?.plate_number
+        ? `${truck.plate_number}${truck.truck_type_label ? ` (${truck.truck_type_label})` : ''}`
+        : 'N/A'
+      const gpsText = gpsCoords
+        ? `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}`
+        : 'Not available'
+      const locationLabel = locationType === 'pickup' ? 'Pickup Location' : 'Drop-off Location'
+      const statusText = locationType === 'pickup'
+        ? 'I am now at the pickup location and ready for loading.'
+        : 'I am now at the drop-off location.'
+      const now = new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })
+
+      const noticeBody = [
+        `Driver arrival notice:`,
+        `JO No.: ${selectedTrip.job_number}`,
+        `Driver: ${userProfile?.full_name || 'Driver'}`,
+        `Truck: ${truckLabel}`,
+        `Location: ${locationLabel}`,
+        `Status: ${statusText}`,
+        `Time: ${now}`,
+        `GPS: ${gpsText}`,
+      ].join('\n')
+
+      // Collect recipient IDs (fleet managers, admins, warehouse managers, truck owner)
+      const recipientIds = new Set<string>()
+
+      const { data: managers } = await supabase
+        .from('profiles')
+        .select('id')
+        .in('role', ['admin', 'fleet_manager', 'warehouse_manager'])
+      ;(managers || []).forEach((m: any) => recipientIds.add(m.id))
+
+      const assignedTruckId = (selectedTrip as any).assigned_truck_id
+      if (assignedTruckId) {
+        const { data: truckRow } = await supabase
+          .from('trucks')
+          .select('owner_id')
+          .eq('id', assignedTruckId)
+          .single()
+        if (truckRow?.owner_id) recipientIds.add(truckRow.owner_id)
+      }
+
+      recipientIds.delete(userId)
+
+      if (recipientIds.size > 0) {
+        await supabase.from('notifications').insert(
+          Array.from(recipientIds).map(uid => ({
+            user_id: uid,
+            title: `Driver at ${locationLabel} — ${selectedTrip.job_number}`,
+            message: noticeBody,
+            type: 'info',
+            link: `/jobs/${selectedTrip.id}`,
+          }))
+        )
+      }
+
+      // Log to delivery_status_logs as a driver self-report (does not change job order status)
+      await supabase.from('delivery_status_logs').insert({
+        job_order_id: selectedTrip.id,
+        status: locationType === 'pickup' ? 'driver_at_pickup' : 'driver_at_dropoff',
+        logged_by: userId,
+        location: gpsCoords ? `${gpsCoords.lat.toFixed(5)}, ${gpsCoords.lng.toFixed(5)}` : null,
+        note: noticeBody,
+        logged_at: new Date().toISOString(),
+      })
+
+      toast.success(`Arrival notice sent to fleet & team`)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to send arrival notice')
+    } finally {
+      setSendingNotice(false)
+    }
   }
 
   const selectedTrip = trips.find(t => t.id === selectedTripId) || null
@@ -541,13 +602,6 @@ export default function TripGuidePage() {
           </div>
         )}
 
-        {/* Route error banner */}
-        {mapLoaded && routeError && (
-          <div className="absolute bottom-2 left-2 right-2 bg-bg-secondary/95 border border-border rounded-lg px-3 py-2">
-            <p className="text-xs text-text-muted text-center">⚠️ {routeError}</p>
-          </div>
-        )}
-
         {/* Map legend — only when route is showing */}
         {mapLoaded && selectedTrip && (
           <div className="absolute top-2 right-2 bg-bg-secondary/90 backdrop-blur border border-border rounded-lg px-2.5 py-2 flex flex-col gap-1.5">
@@ -568,9 +622,28 @@ export default function TripGuidePage() {
           </div>
         )}
 
+        {/* Recenter button — bottom-left, always visible when map is loaded */}
+        {mapLoaded && (
+          <button
+            onClick={recenter}
+            className="absolute bottom-3 left-3 z-20 flex items-center justify-center rounded-xl bg-bg-secondary/95 border border-border active:scale-95 transition-transform"
+            style={{ width: 44, height: 44, boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}
+            title="Recenter map"
+          >
+            <Crosshair size={20} className="text-brand" />
+          </button>
+        )}
+
+        {/* Route error banner — offset left to avoid covering recenter button */}
+        {mapLoaded && routeError && (
+          <div className="absolute bottom-3 left-14 right-2 bg-bg-secondary/95 border border-border rounded-lg px-3 py-2">
+            <p className="text-xs text-text-muted">⚠️ {routeError}</p>
+          </div>
+        )}
+
         {/* No trip — hint to tap marker */}
         {mapLoaded && trips.length === 0 && gpsStatus === 'captured' && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-bg-secondary/90 border border-border rounded-full px-3 py-1.5 whitespace-nowrap">
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-bg-secondary/90 border border-border rounded-full px-3 py-1.5 whitespace-nowrap">
             <p className="text-xs text-text-muted">📍 Tap your marker to confirm GPS</p>
           </div>
         )}
@@ -602,33 +675,43 @@ export default function TripGuidePage() {
       {/* ── Page body ── */}
       <div className="p-4 pb-8 space-y-4">
 
-        {/* Status update CTA */}
-        {selectedTrip && !['delivered', 'completed', 'cancelled'].includes(selectedTrip.status) && (() => {
-          const nextStatus = getNextDriverStatus(selectedTrip.status)
-          if (!nextStatus) return null
-          return (
-            <button
-              onClick={() => updateStatus(selectedTrip.id, nextStatus)}
-              disabled={updatingStatus}
-              className="w-full py-4 rounded-xl font-heading font-bold text-base transition-all"
-              style={{
-                background: updatingStatus ? '#2a2a2a' : '#22c55e',
-                color: '#fff',
-                border: 'none',
-                cursor: updatingStatus ? 'not-allowed' : 'pointer',
-                boxShadow: updatingStatus ? 'none' : '0 4px 20px rgba(34,197,94,0.35)',
-              }}
-            >
-              {updatingStatus ? 'Updating…' : NEXT_STATUS_LABEL[nextStatus] || `Mark as ${JOB_STATUS_LABELS[nextStatus]}`}
-            </button>
-          )
-        })()}
-
-        {/* Delivered banner */}
+        {/* Delivered / completed banner (view only) */}
         {selectedTrip && ['delivered', 'completed'].includes(selectedTrip.status) && (
           <div className="flex items-center justify-center gap-2 py-3.5 rounded-xl bg-success-bg border border-success-border">
             <CheckCircle size={18} className="text-success" />
             <span className="text-success font-bold text-sm">Trip Delivered — Awaiting confirmation</span>
+          </div>
+        )}
+
+        {/* Arrival notice buttons — send message only, never change official job status */}
+        {selectedTrip && !['delivered', 'completed', 'cancelled'].includes(selectedTrip.status) && (
+          <div className="space-y-2">
+            <p className="text-[11px] text-text-muted uppercase tracking-wide font-bold px-0.5">
+              Notify fleet & team
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => sendArrivalNotice('pickup')}
+                disabled={sendingNotice}
+                className="flex flex-col items-center gap-1.5 py-3.5 px-2 rounded-xl border text-center active:scale-95 transition-transform disabled:opacity-50"
+                style={{ background: '#0f2744', borderColor: '#3b82f6', color: '#60a5fa' }}
+              >
+                <MapPin size={20} />
+                <span className="text-xs font-bold leading-tight">I'm at Pickup</span>
+              </button>
+              <button
+                onClick={() => sendArrivalNotice('dropoff')}
+                disabled={sendingNotice}
+                className="flex flex-col items-center gap-1.5 py-3.5 px-2 rounded-xl border text-center active:scale-95 transition-transform disabled:opacity-50"
+                style={{ background: '#0f2744', borderColor: '#3b82f6', color: '#60a5fa' }}
+              >
+                <MapPin size={20} />
+                <span className="text-xs font-bold leading-tight">I'm at Drop-off</span>
+              </button>
+            </div>
+            {sendingNotice && (
+              <p className="text-xs text-text-muted text-center">Sending notice…</p>
+            )}
           </div>
         )}
 
