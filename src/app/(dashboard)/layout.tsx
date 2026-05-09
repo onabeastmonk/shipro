@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 // Nav items: roles: ['all'] = all authenticated roles; otherwise explicit list
 const ALL_NAV_ITEMS = [
   { href: '/dashboard',          label: 'Dashboard',      icon: LayoutDashboard, roles: ['all'] },
-  { href: '/today-drive',        label: "Today's Drive",  icon: Navigation,      roles: ['driver'] },
+  { href: '/my-trips',           label: 'My Trips',       icon: Navigation,      roles: ['driver'] },
   { href: '/jobs',               label: 'Jobs',           icon: ClipboardList,   roles: ['all'] },
   { href: '/tracking',           label: 'Tracking',       icon: MapPin,          roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
   { href: '/fleet',              label: 'Fleet',          icon: Truck,           roles: ['admin', 'fleet_manager', 'truck_owner'] },
@@ -33,7 +33,7 @@ const ALL_NAV_ITEMS = [
 
 // Bottom nav primary items — shown directly (role-filtered at render time)
 const BOTTOM_NAV_PRIMARY_ALL = [
-  { href: '/today-drive', label: 'Drive',  icon: Navigation,      roles: ['driver'] },
+  { href: '/my-trips',    label: 'My Trips', icon: Navigation,      roles: ['driver'] },
   { href: '/dashboard',   label: 'Home',   icon: LayoutDashboard, roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
   { href: '/jobs',        label: 'Jobs',   icon: ClipboardList,   roles: ['all'] },
   { href: '/chat',        label: 'Chat',   icon: MessageCircle,   roles: ['all'] },

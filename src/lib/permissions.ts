@@ -19,6 +19,7 @@ export const ROUTE_ALLOWED_ROLES: Record<string, UserRole[]> = {
   '/emergency':        ALL_ROLES,
   '/profile':          ALL_ROLES,
   '/today-drive':      ['driver'],
+  '/my-trips':         ['driver'],
   '/calendar':         ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'],
   '/tracking':         ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'],
   '/payroll':          ['admin', 'fleet_manager', 'truck_owner'],

@@ -51,9 +51,9 @@ export async function middleware(request: NextRequest) {
   const role = (session.user.user_metadata?.role ?? 'driver') as UserRole
 
   if (!canAccessRoute(pathname, role)) {
-    // Driver going to /tracking → redirect to their trip dashboard
-    if (role === 'driver' && pathname.startsWith('/tracking')) {
-      return NextResponse.redirect(new URL('/today-drive', request.url))
+    // Driver going to /tracking or /today-drive → redirect to My Trips
+    if (role === 'driver' && (pathname.startsWith('/tracking') || pathname.startsWith('/today-drive'))) {
+      return NextResponse.redirect(new URL('/my-trips', request.url))
     }
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
