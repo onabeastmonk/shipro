@@ -165,7 +165,7 @@ export default function TripGuidePage() {
     ].filter((id: string) => id && !directIds.has(id))
 
     // Deduplicate
-    const uniqueExtraIds = [...new Set(extraIds)]
+    const uniqueExtraIds = Array.from(new Set(extraIds))
 
     let extraJobs: any[] = []
     if (uniqueExtraIds.length > 0) {
