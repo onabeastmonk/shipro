@@ -86,7 +86,9 @@ export default function TripGuidePage() {
     document.head.appendChild(script)
   }, [])
 
-  // ── Init map instance — always, not gated on trips ──────────
+  // ── Init map instance — runs when mapLoaded or loading changes ──
+  // loading is a dep because mapRef.current is null during the skeleton render;
+  // we need to re-run once the real map div mounts after data loads.
   useEffect(() => {
     if (!mapLoaded || !mapRef.current || mapInstanceRef.current) return
     mapInstanceRef.current = new window.google.maps.Map(mapRef.current, {
@@ -103,7 +105,7 @@ export default function TripGuidePage() {
       polylineOptions: { strokeColor: '#60a5fa', strokeWeight: 5, strokeOpacity: 0.9 },
     })
     directionsRendererRef.current.setMap(mapInstanceRef.current)
-  }, [mapLoaded])
+  }, [mapLoaded, loading])
 
   // ── Auth + trips ─────────────────────────────────────────────
   useEffect(() => {
@@ -298,11 +300,12 @@ export default function TripGuidePage() {
     }
   }, [gpsCoords])
 
-  // ── Redraw route when selection or map changes ───────────────
+  // ── Redraw route when selection, map, or data-load changes ──
   useEffect(() => {
+    if (loading) return
     const trip = trips.find(t => t.id === selectedTripId)
     if (trip && mapLoaded) drawRoute(trip)
-  }, [selectedTripId, mapLoaded, drawRoute, trips])
+  }, [selectedTripId, mapLoaded, drawRoute, trips, loading])
 
   // ── Driver "You" marker ──────────────────────────────────────
   useEffect(() => {
