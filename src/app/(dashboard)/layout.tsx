@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 // Nav items: roles: ['all'] = all authenticated roles; otherwise explicit list
 const ALL_NAV_ITEMS = [
   { href: '/dashboard',          label: 'Dashboard',      icon: LayoutDashboard, roles: ['all'] },
-  { href: '/my-trips',           label: 'My Trips',       icon: Navigation,      roles: ['driver'] },
+  { href: '/my-trips',           label: 'Trip Guide',     icon: Navigation,      roles: ['driver'] },
   { href: '/jobs',               label: 'Jobs',           icon: ClipboardList,   roles: ['all'] },
   { href: '/tracking',           label: 'Tracking',       icon: MapPin,          roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
   { href: '/fleet',              label: 'Fleet',          icon: Truck,           roles: ['admin', 'fleet_manager', 'truck_owner'] },
@@ -33,7 +33,7 @@ const ALL_NAV_ITEMS = [
 
 // Bottom nav primary items — shown directly (role-filtered at render time)
 const BOTTOM_NAV_PRIMARY_ALL = [
-  { href: '/my-trips',    label: 'My Trips', icon: Navigation,      roles: ['driver'] },
+  { href: '/my-trips',    label: 'Trip Guide', icon: Navigation,      roles: ['driver'] },
   { href: '/dashboard',   label: 'Home',   icon: LayoutDashboard, roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
   { href: '/jobs',        label: 'Jobs',   icon: ClipboardList,   roles: ['all'] },
   { href: '/chat',        label: 'Chat',   icon: MessageCircle,   roles: ['all'] },
@@ -63,6 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const pathname = usePathname()
   const [user, setUser] = useState<User | null>(null)
+  const [immediateRole, setImmediateRole] = useState<string>('')
   const [unreadCount, setUnreadCount] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [activeEmergencies, setActiveEmergencies] = useState(0)
@@ -76,6 +77,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     async function loadUser() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
+
+      // Set role immediately from JWT so nav renders without flicker
+      setImmediateRole((session.user.user_metadata?.role as string) || 'driver')
 
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
       if (profile) setUser(profile as User)
@@ -143,7 +147,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   const roleLabel = roleLabelMap[user?.role || ''] || user?.role || ''
 
-  const userRoleStr = user?.role || ''
+  const userRoleStr = user?.role || immediateRole
   const BOTTOM_NAV_PRIMARY = BOTTOM_NAV_PRIMARY_ALL.filter(i => roleMatch(i.roles, userRoleStr))
   const BOTTOM_NAV_MORE = BOTTOM_NAV_MORE_ALL.filter(i => roleMatch(i.roles, userRoleStr))
   const isMoreActive = BOTTOM_NAV_MORE.some(i => pathname === i.href || pathname.startsWith(i.href + '/'))

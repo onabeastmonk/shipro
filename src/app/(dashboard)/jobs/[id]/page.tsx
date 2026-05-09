@@ -36,6 +36,9 @@ export default function JobDetailPage() {
   const [selectedDriverId, setSelectedDriverId] = useState<string>('')
   const [helperName, setHelperName] = useState<string>('')
   const [helperContact, setHelperContact] = useState<string>('')
+  const [driverSearch, setDriverSearch] = useState<string>('')
+  const [driverSearchResults, setDriverSearchResults] = useState<any[]>([])
+  const [assigningDriver, setAssigningDriver] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -530,6 +533,31 @@ export default function JobDetailPage() {
     await loadJob()
   }
 
+  async function searchDrivers(query: string) {
+    setDriverSearch(query)
+    if (query.trim().length < 2) { setDriverSearchResults([]); return }
+    const { data } = await supabase.from('profiles')
+      .select('id, full_name, contact_number, email, is_verified')
+      .eq('role', 'driver')
+      .ilike('full_name', `%${query}%`)
+      .limit(8)
+    setDriverSearchResults(data || [])
+  }
+
+  async function handleDirectAssignDriver(driver: any) {
+    if (!userId || !job) return
+    setAssigningDriver(true)
+    try {
+      await supabase.from('job_orders').update({ assigned_driver_id: driver.id }).eq('id', id)
+      toast.success(`✅ Driver assigned: ${driver.full_name}`)
+      setDriverSearch('')
+      setDriverSearchResults([])
+      await loadJob()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to assign driver')
+    } finally { setAssigningDriver(false) }
+  }
+
   async function handleDelete() {
     if (!confirm('Are you sure you want to delete this job order? This cannot be undone.')) return
     try {
@@ -880,6 +908,51 @@ export default function JobDetailPage() {
                 </div>
               )
             })()}
+          </div>
+        )}
+
+        {/* ADMIN: Direct driver assignment (override/fix assigned_driver_id) */}
+        {isAdmin && job.assigned_truck_id && (
+          <div className="bg-bg-secondary border border-border rounded-lg p-4">
+            <div className="text-xs text-text-muted font-semibold uppercase mb-3">
+              {job.assigned_driver_id ? '🔄 Change Assigned Driver' : '👤 Assign Driver'}
+            </div>
+            {(job as any).driver?.full_name && (
+              <div className="flex items-center gap-2 mb-3 p-2.5 rounded-lg bg-success-bg border border-success-border">
+                <span className="text-xs text-success">✅ Current: <strong>{(job as any).driver.full_name}</strong></span>
+              </div>
+            )}
+            <div className="relative">
+              <input
+                className="form-input"
+                placeholder="Search driver by name..."
+                value={driverSearch}
+                onChange={e => searchDrivers(e.target.value)}
+              />
+              {driverSearchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-20 bg-bg-elevated border border-border rounded-lg mt-1 overflow-hidden shadow-lg">
+                  {driverSearchResults.map((d: any) => (
+                    <button
+                      key={d.id}
+                      onClick={() => handleDirectAssignDriver(d)}
+                      disabled={assigningDriver}
+                      className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-bg-tertiary transition-colors text-left border-b border-border last:border-0"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-text-primary">{d.full_name}</div>
+                        <div className="text-xs text-text-muted">{d.contact_number || d.email || 'No contact'}</div>
+                      </div>
+                      {d.is_verified && (
+                        <span className="text-xs text-success font-bold ml-2 flex-shrink-0">✓ Verified</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {driverSearch.trim().length >= 2 && driverSearchResults.length === 0 && (
+              <p className="text-xs text-text-muted mt-2">No drivers found for "{driverSearch}"</p>
+            )}
           </div>
         )}
 

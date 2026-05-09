@@ -37,7 +37,7 @@ function sortOrder(status: string): number {
   return 6
 }
 
-export default function MyTripsPage() {
+export default function TripGuidePage() {
   const router = useRouter()
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
@@ -113,60 +113,69 @@ export default function MyTripsPage() {
         return
       }
 
-      await loadTrips(uid)
+      await loadTrips(uid, profile)
     }
     load()
   }, [router])
 
-  async function loadTrips(uid: string) {
-    // Primary query: jobs directly assigned to this driver
+  async function loadTrips(uid: string, profile?: any) {
+    const resolvedProfile = profile ?? userProfile
+    const jobSelectFields = `
+      id, job_number, client_name, contact_number, contact_person,
+      pickup_location, dropoff_location, delivery_date, delivery_time,
+      status, special_instructions, goods_description,
+      total_cbm, estimated_weight_kg, base_rate, total_rate,
+      assigned_driver_id, assigned_truck_id,
+      truck:trucks(plate_number, truck_type_label),
+      shipment_items(id, item_name, quantity, cbm_per_item, total_cbm, is_fragile, requires_special_handling, remarks)
+    `
+
+    // Primary query: jobs directly assigned to this driver via assigned_driver_id
     const { data: directJobs } = await supabase
       .from('job_orders')
-      .select(`
-        id, job_number, client_name, contact_number, contact_person,
-        pickup_location, dropoff_location, delivery_date, delivery_time,
-        status, special_instructions, goods_description,
-        total_cbm, estimated_weight_kg, base_rate, total_rate,
-        assigned_driver_id, assigned_truck_id,
-        truck:trucks(plate_number, truck_type_label),
-        shipment_items(id, item_name, quantity, cbm_per_item, total_cbm, is_fragile, requires_special_handling, remarks)
-      `)
+      .select(jobSelectFields)
       .eq('assigned_driver_id', uid)
       .not('status', 'in', '(cancelled)')
       .order('delivery_date', { ascending: true })
 
-    // Secondary query: jobs where driver applied and was approved
-    // (catches any job not yet updated with assigned_driver_id)
-    const { data: approvedApps } = await supabase
+    const directIds = new Set((directJobs || []).map((j: any) => j.id))
+
+    // Path 2: approved applicants where this driver's UUID is in selected_helper_contact
+    // e.g. "profile:DRIVER_UUID|phone|..." — truck owner applied and selected this driver
+    const { data: contactApps } = await supabase
       .from('job_applicants')
       .select('job_order_id')
-      .eq('driver_id', uid)
       .eq('status', 'approved')
+      .ilike('selected_helper_contact', `%profile:${uid}%`)
+
+    // Path 3: approved applicants matched by driver full name (last resort for manual/non-profile entries)
+    let nameApps: any[] = []
+    if (resolvedProfile?.full_name) {
+      const { data } = await supabase
+        .from('job_applicants')
+        .select('job_order_id')
+        .eq('status', 'approved')
+        .ilike('selected_helper_name', `%${resolvedProfile.full_name}%`)
+      nameApps = data || []
+    }
+
+    const extraIds = [
+      ...(contactApps || []).map((a: any) => a.job_order_id),
+      ...nameApps.map((a: any) => a.job_order_id),
+    ].filter((id: string) => id && !directIds.has(id))
+
+    // Deduplicate
+    const uniqueExtraIds = [...new Set(extraIds)]
 
     let extraJobs: any[] = []
-    if (approvedApps && approvedApps.length > 0) {
-      const directIds = new Set((directJobs || []).map((j: any) => j.id))
-      const extraIds = approvedApps
-        .map((a: any) => a.job_order_id)
-        .filter((id: string) => !directIds.has(id))
-
-      if (extraIds.length > 0) {
-        const { data: extra } = await supabase
-          .from('job_orders')
-          .select(`
-            id, job_number, client_name, contact_number, contact_person,
-            pickup_location, dropoff_location, delivery_date, delivery_time,
-            status, special_instructions, goods_description,
-            total_cbm, estimated_weight_kg, base_rate, total_rate,
-            assigned_driver_id, assigned_truck_id,
-            truck:trucks(plate_number, truck_type_label),
-            shipment_items(id, item_name, quantity, cbm_per_item, total_cbm, is_fragile, requires_special_handling, remarks)
-          `)
-          .in('id', extraIds)
-          .not('status', 'in', '(cancelled)')
-          .order('delivery_date', { ascending: true })
-        extraJobs = extra || []
-      }
+    if (uniqueExtraIds.length > 0) {
+      const { data: extra } = await supabase
+        .from('job_orders')
+        .select(jobSelectFields)
+        .in('id', uniqueExtraIds)
+        .not('status', 'in', '(cancelled)')
+        .order('delivery_date', { ascending: true })
+      extraJobs = extra || []
     }
 
     const allTrips = [...(directJobs || []), ...extraJobs] as JobOrder[]
@@ -349,7 +358,7 @@ export default function MyTripsPage() {
       {/* Header */}
       <div className="mb-4">
         <h1 className="font-heading text-2xl font-bold text-text-primary flex items-center gap-2">
-          <Navigation size={22} className="text-brand" /> My Trips
+          <Navigation size={22} className="text-brand" /> Trip Guide
         </h1>
         <div className="flex items-center gap-3 mt-1">
           {gpsStatus === 'captured' && (
