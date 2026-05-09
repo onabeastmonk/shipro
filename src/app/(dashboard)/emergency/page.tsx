@@ -18,8 +18,8 @@ export default function EmergencyPage() {
   const [sent, setSent] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [locationText, setLocationText] = useState('')
-  const [gpsLoading, setGpsLoading] = useState(false)
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [gpsStatus, setGpsStatus] = useState<'idle' | 'capturing' | 'captured' | 'denied'>('idle')
   const [isAdmin, setIsAdmin] = useState(false)
   const [holdProgress, setHoldProgress] = useState(0)
   const [holdInterval, setHoldInterval] = useState<any>(null)
@@ -55,6 +55,23 @@ export default function EmergencyPage() {
       const { data: alertData } = await alertQuery
       setAlerts(alertData || [])
 
+      // Auto-capture GPS for non-admins (drivers etc.)
+      if (!adminRole && navigator.geolocation) {
+        setGpsStatus('capturing')
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+            setGpsCoords(coords)
+            setLocationText(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`)
+            setGpsStatus('captured')
+          },
+          () => {
+            setGpsStatus('denied')
+          },
+          { timeout: 15000, enableHighAccuracy: true }
+        )
+      }
+
       // Real-time for admins
       if (adminRole) {
         const channel = supabase.channel('emergency-alerts')
@@ -84,21 +101,6 @@ export default function EmergencyPage() {
     }
     load()
   }, [router])
-
-  function getGPS() {
-    if (!navigator.geolocation) { toast.error('GPS not available on this device'); return }
-    setGpsLoading(true)
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-        setLocationText(`${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`)
-        setGpsLoading(false)
-        toast.success('GPS location captured!')
-      },
-      () => { setGpsLoading(false); toast.error('Could not get GPS. Type your location manually.') },
-      { timeout: 10000 }
-    )
-  }
 
   // Hold to send SOS
   function startHold() {
@@ -321,16 +323,32 @@ export default function EmergencyPage() {
                 </div>
               )}
 
-              {/* Location */}
+              {/* Location — auto-captured */}
               <div className="mb-6">
                 <label className="form-label">Your Location</label>
-                <div className="flex gap-2">
-                  <input className="form-input flex-1" placeholder="Describe your location..." value={locationText} onChange={e => setLocationText(e.target.value)} />
-                  <button onClick={getGPS} disabled={gpsLoading} className="btn btn-sm btn-outline flex-shrink-0">
-                    {gpsLoading ? '...' : '📍 GPS'}
-                  </button>
-                </div>
-                {gpsCoords && <p className="text-xs text-success mt-1">✓ GPS captured: {gpsCoords.lat.toFixed(4)}, {gpsCoords.lng.toFixed(4)}</p>}
+                {gpsStatus === 'capturing' && (
+                  <div className="flex items-center gap-2 py-2 text-sm text-text-muted">
+                    <span className="w-2 h-2 rounded-full bg-warning animate-pulse" />
+                    Capturing GPS location...
+                  </div>
+                )}
+                {gpsStatus === 'captured' && gpsCoords && (
+                  <div className="flex items-center gap-2 py-2 text-sm text-success mb-2">
+                    <span className="w-2 h-2 rounded-full bg-success" />
+                    GPS captured: {gpsCoords.lat.toFixed(4)}, {gpsCoords.lng.toFixed(4)}
+                  </div>
+                )}
+                {gpsStatus === 'denied' && (
+                  <div className="text-xs text-warning mb-2">
+                    ⚠️ Location access denied. Please enable GPS in your browser settings for accurate SOS alerts. You can still describe your location below.
+                  </div>
+                )}
+                <input
+                  className="form-input"
+                  placeholder="Add location details (street, landmark...)"
+                  value={locationText}
+                  onChange={e => setLocationText(e.target.value)}
+                />
               </div>
 
               {/* SOS Button */}

@@ -51,8 +51,10 @@ export async function middleware(request: NextRequest) {
   const role = (session.user.user_metadata?.role ?? 'driver') as UserRole
 
   if (!canAccessRoute(pathname, role)) {
-    // Redirect to dashboard rather than a hard error so the user
-    // sees their permitted home view instead of a blank page.
+    // Driver going to /tracking → redirect to their trip dashboard
+    if (role === 'driver' && pathname.startsWith('/tracking')) {
+      return NextResponse.redirect(new URL('/today-drive', request.url))
+    }
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 

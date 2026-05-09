@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import ContactCard from '@/components/ContactCard'
 import { formatDate } from '@/lib/utils'
@@ -31,6 +32,7 @@ function getEventStyle(type: string) {
 }
 
 export default function CalendarPage() {
+  const router = useRouter()
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -39,6 +41,11 @@ export default function CalendarPage() {
 
   useEffect(() => {
     async function load() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
+      if (profile?.role === 'driver') { router.push('/dashboard'); return }
+
       const [jobsRes, docsRes] = await Promise.all([
         supabase.from('job_orders').select('id, job_number, client_name, delivery_date, status, pickup_location, dropoff_location, total_rate, assigned_driver_id, contact_number, truck:trucks(plate_number, truck_type_label, owner_name, contact_number, owner_id), driver:profiles!assigned_driver_id(id, full_name, contact_number)'),
         supabase.from('truck_documents').select('id, document_type, expiry_date, status, truck:trucks(plate_number, owner_name)'),
@@ -85,7 +92,7 @@ export default function CalendarPage() {
       setLoading(false)
     }
     load()
-  }, [])
+  }, [router])
 
   const year = currentDate.getFullYear()
   const month = currentDate.getMonth()

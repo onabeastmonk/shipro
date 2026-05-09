@@ -33,10 +33,16 @@ export default function RegisterTruckPage() {
   useEffect(() => {
     async function load() {
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
+      if (!session) { router.push('/login'); return }
       setUserId(session.user.id)
       const { data: profile } = await supabase.from('profiles').select('role, full_name, company_name, contact_number, email').eq('id', session.user.id).single()
       setUserRole(profile?.role || null)
+
+      // Drivers and warehouse managers cannot register trucks
+      if (profile?.role === 'driver' || profile?.role === 'warehouse_manager') {
+        router.push('/dashboard')
+        return
+      }
 
       if (profile?.role === 'truck_owner') {
         // Auto-fill from own profile

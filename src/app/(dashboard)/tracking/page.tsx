@@ -29,6 +29,7 @@ export default function TrackingPage() {
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
+  const driverMarkersRef = useRef<Map<string, any>>(new Map())
 
   useEffect(() => {
     if (window.google) { setMapLoaded(true); return }
@@ -72,8 +73,8 @@ export default function TrackingPage() {
       const role = profile?.role || null
       setUserRole(role)
 
-      // Drivers cannot access tracking
-      if (role === 'driver') { router.push('/jobs'); return }
+      // Drivers go to their own trip dashboard
+      if (role === 'driver') { router.push('/today-drive'); return }
 
       let query = supabase.from('job_orders')
         .select('*, truck:trucks(id, plate_number, truck_type_label, driver_name)')
@@ -98,6 +99,45 @@ export default function TrackingPage() {
     }
     load()
   }, [router])
+
+  // Subscribe to real-time driver location broadcasts (admin/fleet_manager only)
+  useEffect(() => {
+    if (!userRole || (userRole !== 'admin' && userRole !== 'fleet_manager')) return
+    if (!mapLoaded) return
+
+    const channel = supabase.channel('driver-locations')
+      .on('broadcast', { event: 'driver-location' }, ({ payload }: { payload: any }) => {
+        if (!mapInstanceRef.current || !window.google) return
+        const { driver_id, driver_name, job_number, lat, lng } = payload
+        const pos = { lat, lng }
+
+        const existing = driverMarkersRef.current.get(driver_id)
+        if (existing) {
+          existing.setPosition(pos)
+        } else {
+          const marker = new window.google.maps.Marker({
+            position: pos,
+            map: mapInstanceRef.current,
+            icon: {
+              path: window.google.maps.SymbolPath.CIRCLE,
+              scale: 10, fillColor: '#3b82f6', fillOpacity: 1,
+              strokeColor: '#fff', strokeWeight: 2.5,
+            },
+            title: `${driver_name} · ${job_number}`,
+            zIndex: 1000,
+          })
+          // Info window on click
+          const infoWindow = new window.google.maps.InfoWindow({
+            content: `<div style="color:#111;font-size:13px;font-weight:600">${driver_name}</div><div style="color:#555;font-size:11px">${job_number}</div>`,
+          })
+          marker.addListener('click', () => infoWindow.open(mapInstanceRef.current, marker))
+          driverMarkersRef.current.set(driver_id, marker)
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userRole, mapLoaded])
 
   const showRoute = useCallback(async (job: JobOrder) => {
     if (!mapInstanceRef.current || !window.google) return
