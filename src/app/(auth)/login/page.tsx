@@ -32,7 +32,7 @@ export default function LoginPage() {
     try {
       await signIn(email, password)
       toast.success('Welcome back!')
-      router.replace('/dashboard')
+      window.location.href = '/dashboard'
     } catch (err: any) {
       toast.error(err.message || 'Login failed. Check your credentials.')
     } finally {
