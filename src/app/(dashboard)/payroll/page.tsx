@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, generatePayslipPDF, exportToCSV } from '@/lib/utils'
@@ -13,27 +14,65 @@ type ViewMode = 'by_owner' | 'all'
 type PeriodFilter = 'all_unpaid' | '15days' | 'this_month' | 'last_month' | 'all'
 
 export default function PayrollPage() {
+  const router = useRouter()
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [loading, setLoading] = useState(true)
   const [showNewModal, setShowNewModal] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<ViewMode>('by_owner')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all_unpaid')
   const [expandedOwner, setExpandedOwner] = useState<string | null>(null)
   const [processingBatch, setProcessingBatch] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUserId(session?.user.id || null))
-    loadPayslips()
-  }, [])
+    async function init() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const uid = session.user.id
+      setUserId(uid)
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', uid).single()
+      const role = profile?.role || null
+      setUserRole(role)
 
-  async function loadPayslips() {
+      // warehouse_manager and driver cannot access payroll
+      if (role === 'warehouse_manager' || role === 'driver') {
+        router.push('/dashboard')
+        return
+      }
+      await loadPayslips(uid, role)
+    }
+    init()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router])
+
+  async function loadPayslips(uid?: string | null, role?: string | null) {
     setLoading(true)
+    const currentUid = uid ?? userId
+    const currentRole = role ?? userRole
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('payslips')
         .select('*, driver:profiles!driver_id(id, full_name, email, contact_number, company_name, owner_id, role), job_order:job_orders(job_number, client_name), job_order_id, actual_cbm, target_cbm, rate_per_cbm')
         .order('delivery_date', { ascending: false })
+
+      if (currentRole === 'truck_owner' && currentUid) {
+        // Get driver IDs under this truck owner
+        const { data: myDrivers } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('owner_id', currentUid)
+          .eq('role', 'driver')
+        const driverIds = (myDrivers || []).map((d: any) => d.id)
+        if (driverIds.length > 0) {
+          query = query.in('driver_id', driverIds)
+        } else {
+          setPayslips([]); setLoading(false); return
+        }
+      }
+      // fleet_manager / admin: see all payslips
+
+      const { data, error } = await query
       if (!error) setPayslips((data || []) as any)
     } catch { } finally { setLoading(false) }
   }
@@ -96,7 +135,7 @@ export default function PayrollPage() {
       }
 
       toast.success('Payment released and truck owner notified!')
-      await loadPayslips()
+      await loadPayslips(userId, userRole)
     } catch (err: any) {
       toast.error(err.message)
     } finally { setProcessingBatch(false) }
@@ -144,9 +183,11 @@ export default function PayrollPage() {
           <button onClick={handleExportCSV} className="btn btn-sm btn-outline flex items-center gap-1.5">
             <Download size={14} /> CSV
           </button>
-          <button onClick={() => setShowNewModal(true)} className="btn btn-sm btn-secondary flex items-center gap-1.5">
-            <Plus size={14} /> Manual
-          </button>
+          {(userRole === 'admin' || userRole === 'fleet_manager') && (
+            <button onClick={() => setShowNewModal(true)} className="btn btn-sm btn-secondary flex items-center gap-1.5">
+              <Plus size={14} /> Manual
+            </button>
+          )}
         </div>
       </div>
 
@@ -182,19 +223,21 @@ export default function PayrollPage() {
         )}
       </div>
 
-      {/* View toggle */}
-      <div className="flex gap-2 mb-4">
-        <button onClick={() => setViewMode('by_owner')}
-          className={cn('flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
-            viewMode === 'by_owner' ? 'bg-brand text-bg-primary' : 'bg-bg-secondary border border-border text-text-secondary')}>
-          <Users size={13} /> By Truck Owner
-        </button>
-        <button onClick={() => setViewMode('all')}
-          className={cn('flex-1 py-2 rounded-lg text-xs font-semibold transition-all',
-            viewMode === 'all' ? 'bg-brand text-bg-primary' : 'bg-bg-secondary border border-border text-text-secondary')}>
-          All Payslips
-        </button>
-      </div>
+      {/* View toggle — only for fleet_manager / admin */}
+      {(userRole === 'admin' || userRole === 'fleet_manager') && (
+        <div className="flex gap-2 mb-4">
+          <button onClick={() => setViewMode('by_owner')}
+            className={cn('flex-1 py-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5',
+              viewMode === 'by_owner' ? 'bg-brand text-bg-primary' : 'bg-bg-secondary border border-border text-text-secondary')}>
+            <Users size={13} /> By Truck Owner
+          </button>
+          <button onClick={() => setViewMode('all')}
+            className={cn('flex-1 py-2 rounded-lg text-xs font-semibold transition-all',
+              viewMode === 'all' ? 'bg-brand text-bg-primary' : 'bg-bg-secondary border border-border text-text-secondary')}>
+            All Payslips
+          </button>
+        </div>
+      )}
 
       {loading ? Array(3).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-24 rounded-lg mb-3" />) :
         viewMode === 'by_owner' ? (
@@ -256,7 +299,7 @@ export default function PayrollPage() {
                         <PayslipRow key={p.id} payslip={p} onStatusChange={async (status) => {
                           await supabase.from('payslips').update({ payment_status: status, date_paid: status === 'paid' ? new Date().toISOString().split('T')[0] : null }).eq('id', p.id)
                           toast.success('Updated')
-                          await loadPayslips()
+                          await loadPayslips(userId, userRole)
                         }} />
                       ))}
                     </div>
@@ -274,7 +317,7 @@ export default function PayrollPage() {
               <PayslipCard key={p.id} payslip={p} onStatusChange={async (status) => {
                 await supabase.from('payslips').update({ payment_status: status, date_paid: status === 'paid' ? new Date().toISOString().split('T')[0] : null }).eq('id', p.id)
                 toast.success('Updated')
-                await loadPayslips()
+                await loadPayslips(userId, userRole)
               }} />
             ))}
           </div>
@@ -297,7 +340,7 @@ export default function PayrollPage() {
             if (error) throw error
             toast.success('Payslip created!')
             setShowNewModal(false)
-            loadPayslips()
+            loadPayslips(userId, userRole)
           }}
         />
       )}

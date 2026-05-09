@@ -40,9 +40,10 @@ export default function IncidentsPage() {
       setUserId(session.user.id)
 
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      setUserRole(profile?.role || null)
+      const role = profile?.role || null
+      setUserRole(role)
 
-      await loadIncidents()
+      await loadIncidents(session.user.id, role)
 
       if (profile?.role === 'driver') {
         const { data: jobs } = await supabase.from('job_orders')
@@ -62,8 +63,11 @@ export default function IncidentsPage() {
     load()
   }, [router])
 
-  async function loadIncidents() {
-    const { data } = await supabase
+  async function loadIncidents(uid?: string | null, role?: string | null) {
+    const currentUid = uid ?? userId
+    const currentRole = role ?? userRole
+
+    let query = supabase
       .from('incident_reports')
       .select(`
         *,
@@ -75,6 +79,18 @@ export default function IncidentsPage() {
         reporter:profiles!reported_by(full_name, contact_number)
       `)
       .order('created_at', { ascending: false })
+
+    if (currentRole === 'driver' && currentUid) {
+      // Drivers only see incidents they reported
+      query = query.eq('reported_by', currentUid)
+    } else if (currentRole === 'truck_owner' && currentUid) {
+      // Truck owners see incidents they reported OR incidents on jobs with their trucks
+      // We filter by reported_by for now; the UI shows truck details so they can see context
+      query = query.eq('reported_by', currentUid)
+    }
+    // warehouse_manager, fleet_manager, admin: see all incidents
+
+    const { data } = await query
     setIncidents(data || [])
   }
 
@@ -122,7 +138,7 @@ export default function IncidentsPage() {
       setForm({ job_order_id: '', incident_type: '', description: '', location: '', action_taken: '', reported_at: new Date().toISOString().slice(0, 16) })
       setPhotoFile(null)
       setPhotoPreview(null)
-      await loadIncidents()
+      await loadIncidents(userId, userRole)
     } catch (err: any) {
       toast.error(err.message || 'Failed to submit report')
     } finally {
@@ -174,7 +190,7 @@ export default function IncidentsPage() {
         <div className="space-y-3">
           {incidents.map(incident => (
             <IncidentCard key={incident.id} incident={incident} statusColor={statusColor}
-              isAdmin={userRole === 'admin'}
+              isAdmin={userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager'}
               onStatusChange={async (newStatus: string) => {
                 await supabase.from('incident_reports').update({ status: newStatus }).eq('id', incident.id)
                 setIncidents(prev => prev.map(i => i.id === incident.id ? { ...i, status: newStatus } : i))
