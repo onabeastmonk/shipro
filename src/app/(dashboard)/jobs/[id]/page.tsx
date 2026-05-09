@@ -10,6 +10,7 @@ import { JOB_STATUS_LABELS, DELIVERY_STEPS, type JobOrder, type JobStatus } from
 import { ChevronLeft, CheckCircle, Circle, Clock, Upload, AlertTriangle, Edit, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ContactCard from '@/components/ContactCard'
+import { canUpdateLoadingStatus, canApproveApplicants, LOADING_STATUSES } from '@/lib/permissions'
 
 export default function JobDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -270,20 +271,25 @@ export default function JobDetailPage() {
 
   async function handleStatusUpdate(newStatus: JobStatus) {
     if (!userId || !job) return
+    const role = userRole as any
 
     // Only assigned driver/truck_owner or admin can update status
-    if (userRole === 'truck_owner' && (job as any).truck?.owner_id !== userId && job.assigned_driver_id !== userId) {
+    if (role === 'truck_owner' && (job as any).truck?.owner_id !== userId && job.assigned_driver_id !== userId) {
       toast.error('Only the assigned truck owner can update delivery status')
       return
     }
 
-    // When marking as loaded — only warehouse_manager or fleet_manager confirms
-    // Truck owner just moves to at_pickup, warehouse manager confirms the load
-    if (newStatus === 'loaded') {
-      if (userRole !== 'warehouse_manager' && userRole !== 'fleet_manager' && userRole !== 'admin') {
-        toast.error('Only Warehouse Manager or Fleet Manager can confirm loading')
+    // Loading-related statuses (at_pickup, loaded, in_transit) are restricted to
+    // fleet_manager and warehouse_manager only
+    if (LOADING_STATUSES.has(newStatus)) {
+      if (!canUpdateLoadingStatus(role)) {
+        toast.error('Only Fleet Manager or Warehouse Manager can update loading-related status')
         return
       }
+    }
+
+    // "loaded" triggers CBM confirmation modal
+    if (newStatus === 'loaded') {
       setLoadedCBM(totalCBM.toFixed(3))
       setUnloadedItems('')
       setLoadingNote('')
@@ -549,6 +555,12 @@ export default function JobDetailPage() {
   const isWarehouseManager = userRole === 'warehouse_manager'
   const isTruckOwner = userRole === 'truck_owner'
   const isAssignedTruckOwner = isTruckOwner && ((job as any).truck?.owner_id === userId || job.assigned_driver_id === userId)
+  const canUpdateStatus = isAdmin || isWarehouseManager || isAssignedTruckOwner
+  // Steps visible in status modal — loading statuses filtered for roles that can't set them
+  const visibleStatusSteps = DELIVERY_STEPS.filter(step => {
+    if (LOADING_STATUSES.has(step) && !canUpdateLoadingStatus(userRole as any)) return false
+    return true
+  })
   const pendingApplicants = (job.applicants || []).filter((a: any) => a.status === 'pending')
 
   return (
@@ -1043,7 +1055,7 @@ export default function JobDetailPage() {
 
         {/* Actions */}
         <div className="flex gap-3 pb-6">
-          {isAdmin && (
+          {(isAdmin || isWarehouseManager) && (
             <button onClick={() => setShowStatusModal(true)} className="btn btn-primary flex-1">
               Update Status
             </button>
@@ -1436,7 +1448,7 @@ export default function JobDetailPage() {
               Update Delivery Status
             </div>
             <div className="p-4 space-y-2">
-              {DELIVERY_STEPS.map(step => (
+              {visibleStatusSteps.map(step => (
                 <button
                   key={step}
                   onClick={() => handleStatusUpdate(step)}

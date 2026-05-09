@@ -22,29 +22,57 @@ function FleetContent() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [userId, setUserId] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUserId(session?.user.id || null)
+      if (!session) return
+      const uid = session.user.id
+      setUserId(uid)
+      supabase.from('profiles').select('role').eq('id', uid).single()
+        .then(({ data }) => setUserRole(data?.role || null))
     })
   }, [])
 
   const load = useCallback(async () => {
+    if (!userId) return // wait for auth
     setLoading(true)
     try {
-      const [t] = await Promise.all([fetchTrucks({ search: search || undefined })])
+      let t: Truck[]
+      if (userRole === 'truck_owner') {
+        // Truck owners see only their own trucks
+        const { data } = await supabase
+          .from('trucks')
+          .select('*, documents:truck_documents(*)')
+          .eq('owner_id', userId)
+          .order('created_at', { ascending: false })
+        t = (data || []) as Truck[]
+      } else {
+        t = await fetchTrucks({ search: search || undefined })
+      }
       setTrucks(t)
 
-      // Fleet managers and admins see all truck owners and their drivers
-      const { data: allDrivers } = await supabase
-        .from('profiles')
-        .select('id, full_name, role, contact_number, email, company_name, is_verified')
-        .in('role', ['truck_owner', 'driver'])
-        .order('full_name')
-      setDrivers(allDrivers || [])
+      if (userRole === 'truck_owner') {
+        // Truck owners see only their own drivers
+        const { data: myDrivers } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, contact_number, email, company_name, is_verified')
+          .eq('owner_id', userId)
+          .in('role', ['driver'])
+          .order('full_name')
+        setDrivers(myDrivers || [])
+      } else {
+        // Fleet managers and admins see all truck owners and their drivers
+        const { data: allDrivers } = await supabase
+          .from('profiles')
+          .select('id, full_name, role, contact_number, email, company_name, is_verified')
+          .in('role', ['truck_owner', 'driver'])
+          .order('full_name')
+        setDrivers(allDrivers || [])
+      }
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [search])
+  }, [search, userId, userRole])
 
   useEffect(() => {
     const timer = setTimeout(load, 300)

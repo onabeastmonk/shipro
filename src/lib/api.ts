@@ -53,6 +53,9 @@ export async function fetchJobOrders(filters?: {
   dateTo?: string
   limit?: number
   offset?: number
+  // Role-based filtering context
+  userRole?: string
+  userId?: string
 }) {
   let query = supabase
     .from('job_orders')
@@ -63,6 +66,48 @@ export async function fetchJobOrders(filters?: {
       applicants:job_applicants(id, status)
     `)
     .order('created_at', { ascending: false })
+
+  // ── Data-level role filtering ─────────────────────────────
+  const { userRole, userId } = filters || {}
+
+  if (userRole === 'driver' && userId) {
+    // Drivers see only jobs they are assigned to
+    query = query.eq('assigned_driver_id', userId)
+  } else if (userRole === 'truck_owner' && userId) {
+    // Truck owners see jobs where their trucks were assigned OR they applied
+    // Strategy: fetch truck IDs owned by this user, then filter by those trucks
+    const { data: myTrucks } = await supabase
+      .from('trucks')
+      .select('id')
+      .eq('owner_id', userId)
+    const truckIds = (myTrucks || []).map((t: any) => t.id)
+
+    // Also get jobs where they applied (job_applicants.driver_id = userId)
+    const { data: myApps } = await supabase
+      .from('job_applicants')
+      .select('job_order_id')
+      .eq('driver_id', userId)
+    const appliedJobIds = (myApps || []).map((a: any) => a.job_order_id)
+
+    if (truckIds.length > 0 || appliedJobIds.length > 0) {
+      // Build OR filter: assigned truck in my trucks OR I have an application
+      const conditions: string[] = []
+      if (truckIds.length > 0) {
+        conditions.push(`assigned_truck_id.in.(${truckIds.join(',')})`)
+      }
+      if (appliedJobIds.length > 0) {
+        conditions.push(`id.in.(${appliedJobIds.join(',')})`)
+      }
+      query = query.or(conditions.join(','))
+    } else {
+      // No trucks or applications — return empty
+      return []
+    }
+  } else if (userRole === 'warehouse_manager' && userId) {
+    // Warehouse managers see all jobs (they need to manage loading status for any job)
+    // No additional filter needed — they can see all jobs to update loading status
+  }
+  // admin / fleet_manager: see all jobs (no filter)
 
   if (filters?.status && filters.status !== 'all') {
     query = query.eq('status', filters.status)

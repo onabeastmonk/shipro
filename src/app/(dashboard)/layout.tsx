@@ -12,40 +12,49 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
+// Nav items: roles: ['all'] = all authenticated roles; otherwise explicit list
 const ALL_NAV_ITEMS = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['all'] },
-  { href: '/jobs', label: 'Jobs', icon: ClipboardList, roles: ['all'] },
-  { href: '/tracking', label: 'Tracking', icon: MapPin, roles: ['all'] },
-  { href: '/fleet', label: 'Fleet', icon: Truck, roles: ['admin', 'fleet_manager', 'truck_owner'] },
-  { href: '/payroll', label: 'Payroll', icon: DollarSign, roles: ['admin', 'fleet_manager'] },
-  { href: '/warehouse', label: 'Warehouse', icon: Warehouse, roles: ['admin', 'fleet_manager', 'warehouse_manager'] },
-  { href: '/verification', label: 'Verification', icon: ShieldCheck, roles: ['admin', 'fleet_manager'] },
-  { href: '/owner-profile', label: 'My Team', icon: UserCheck, roles: ['truck_owner'] },
-  { href: '/drivers', label: 'My Drivers', icon: Users, roles: ['truck_owner'] },
-  { href: '/driver-application', label: 'My Application', icon: UserCheck, roles: ['driver'] },
-  { href: '/chat', label: 'Messages', icon: MessageCircle, roles: ['all'] },
-  { href: '/calendar', label: 'Calendar', icon: Calendar, roles: ['all'] },
-  { href: '/incidents', label: 'Incidents', icon: AlertTriangle, roles: ['all'] },
-  { href: '/emergency', label: 'Emergency', icon: Phone, roles: ['all'] },
+  { href: '/dashboard',          label: 'Dashboard',      icon: LayoutDashboard, roles: ['all'] },
+  { href: '/jobs',               label: 'Jobs',           icon: ClipboardList,   roles: ['all'] },
+  { href: '/tracking',           label: 'Tracking',       icon: MapPin,          roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
+  { href: '/fleet',              label: 'Fleet',          icon: Truck,           roles: ['admin', 'fleet_manager', 'truck_owner'] },
+  { href: '/payroll',            label: 'Payroll',        icon: DollarSign,      roles: ['admin', 'fleet_manager', 'truck_owner'] },
+  { href: '/warehouse',          label: 'Warehouse',      icon: Warehouse,       roles: ['admin', 'fleet_manager', 'warehouse_manager'] },
+  { href: '/verification',       label: 'Verification',   icon: ShieldCheck,     roles: ['admin', 'fleet_manager'] },
+  { href: '/owner-profile',      label: 'My Team',        icon: UserCheck,       roles: ['truck_owner'] },
+  { href: '/drivers',            label: 'My Drivers',     icon: Users,           roles: ['truck_owner'] },
+  { href: '/driver-application', label: 'My Application', icon: UserCheck,       roles: ['driver'] },
+  { href: '/chat',               label: 'Messages',       icon: MessageCircle,   roles: ['all'] },
+  { href: '/calendar',           label: 'Calendar',       icon: Calendar,        roles: ['all'] },
+  { href: '/incidents',          label: 'Incidents',      icon: AlertTriangle,   roles: ['all'] },
+  { href: '/emergency',          label: 'Emergency',      icon: Phone,           roles: ['all'] },
 ]
 
-const BOTTOM_NAV_PRIMARY = [
-  { href: '/dashboard', label: 'Home', icon: LayoutDashboard },
-  { href: '/jobs', label: 'Jobs', icon: ClipboardList },
-  { href: '/chat', label: 'Chat', icon: MessageCircle },
-  { href: '/fleet', label: 'Fleet', icon: Truck },
+// Bottom nav primary items — shown directly (role-filtered at render time)
+const BOTTOM_NAV_PRIMARY_ALL = [
+  { href: '/dashboard', label: 'Home',  icon: LayoutDashboard, roles: ['all'] },
+  { href: '/jobs',      label: 'Jobs',  icon: ClipboardList,   roles: ['all'] },
+  { href: '/chat',      label: 'Chat',  icon: MessageCircle,   roles: ['all'] },
+  { href: '/fleet',     label: 'Fleet', icon: Truck,           roles: ['admin', 'fleet_manager', 'truck_owner'] },
 ]
 
-const BOTTOM_NAV_MORE = [
-  { href: '/tracking', label: 'Tracking', icon: MapPin },
-  { href: '/warehouse', label: 'Warehouse', icon: Warehouse },
-  { href: '/verification', label: 'Verify', icon: ShieldCheck },
-  { href: '/payroll', label: 'Payroll', icon: DollarSign },
-  { href: '/drivers', label: 'Drivers', icon: Users },
-  { href: '/calendar', label: 'Calendar', icon: Calendar },
-  { href: '/incidents', label: 'Incidents', icon: AlertTriangle },
-  { href: '/emergency', label: 'SOS', icon: Phone },
+// Bottom nav "More" sheet items — role-filtered at render time
+const BOTTOM_NAV_MORE_ALL = [
+  { href: '/tracking',           label: 'Tracking',    icon: MapPin,        roles: ['admin', 'fleet_manager', 'warehouse_manager', 'truck_owner'] },
+  { href: '/warehouse',          label: 'Warehouse',   icon: Warehouse,     roles: ['admin', 'fleet_manager', 'warehouse_manager'] },
+  { href: '/verification',       label: 'Verify',      icon: ShieldCheck,   roles: ['admin', 'fleet_manager'] },
+  { href: '/payroll',            label: 'Payroll',     icon: DollarSign,    roles: ['admin', 'fleet_manager', 'truck_owner'] },
+  { href: '/drivers',            label: 'My Drivers',  icon: Users,         roles: ['truck_owner'] },
+  { href: '/owner-profile',      label: 'My Team',     icon: UserCheck,     roles: ['truck_owner'] },
+  { href: '/driver-application', label: 'My App',      icon: UserCheck,     roles: ['driver'] },
+  { href: '/calendar',           label: 'Calendar',    icon: Calendar,      roles: ['all'] },
+  { href: '/incidents',          label: 'Incidents',   icon: AlertTriangle, roles: ['all'] },
+  { href: '/emergency',          label: 'SOS',         icon: Phone,         roles: ['all'] },
 ]
+
+function roleMatch(roles: string[], userRole: string): boolean {
+  return roles.includes('all') || roles.includes(userRole)
+}
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -131,6 +140,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   const roleLabel = roleLabelMap[user?.role || ''] || user?.role || ''
 
+  const userRoleStr = user?.role || ''
+  const BOTTOM_NAV_PRIMARY = BOTTOM_NAV_PRIMARY_ALL.filter(i => roleMatch(i.roles, userRoleStr))
+  const BOTTOM_NAV_MORE = BOTTOM_NAV_MORE_ALL.filter(i => roleMatch(i.roles, userRoleStr))
   const isMoreActive = BOTTOM_NAV_MORE.some(i => pathname === i.href || pathname.startsWith(i.href + '/'))
 
   return (
@@ -161,7 +173,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </button>
         </div>
         <nav className="flex-1 p-3 overflow-y-auto">
-          {ALL_NAV_ITEMS.filter(item => item.roles.includes('all') || item.roles.includes(user?.role || '')).map(item => {
+          {ALL_NAV_ITEMS.filter(item => roleMatch(item.roles, userRoleStr)).map(item => {
             const active = pathname === item.href || pathname.startsWith(item.href + '/')
             const badge = item.href === '/chat' ? unreadMessages : item.href === '/emergency' ? activeEmergencies : 0
             return (

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getJobStatusColor, formatDate, formatCurrency } from '@/lib/utils'
 import { JOB_STATUS_LABELS, DELIVERY_STEPS, type JobOrder, type JobStatus } from '@/types'
@@ -13,6 +14,7 @@ declare global {
 }
 
 export default function TrackingPage() {
+  const router = useRouter()
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<any>(null)
   const directionsRendererRef = useRef<any>(null)
@@ -25,6 +27,8 @@ export default function TrackingPage() {
   const [routeInfo, setRouteInfo] = useState<{ distance: string; duration: string } | null>(null)
   const [detailJob, setDetailJob] = useState<any>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string | null>(null)
 
   useEffect(() => {
     if (window.google) { setMapLoaded(true); return }
@@ -59,15 +63,41 @@ export default function TrackingPage() {
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase.from('job_orders')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) { router.push('/login'); return }
+      const uid = session.user.id
+      setUserId(uid)
+
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', uid).single()
+      const role = profile?.role || null
+      setUserRole(role)
+
+      // Drivers cannot access tracking
+      if (role === 'driver') { router.push('/jobs'); return }
+
+      let query = supabase.from('job_orders')
         .select('*, truck:trucks(id, plate_number, truck_type_label, driver_name)')
         .order('created_at', { ascending: false })
+
+      if (role === 'truck_owner') {
+        // Only jobs assigned to their trucks
+        const { data: myTrucks } = await supabase.from('trucks').select('id').eq('owner_id', uid)
+        const truckIds = (myTrucks || []).map((t: any) => t.id)
+        if (truckIds.length > 0) {
+          query = query.in('assigned_truck_id', truckIds)
+        } else {
+          setJobs([]); setLoading(false); return
+        }
+      }
+      // warehouse_manager and fleet_manager/admin see all jobs
+
+      const { data } = await query
       setJobs((data || []) as JobOrder[])
       if (data && data.length > 0) setSelectedJob(data[0] as JobOrder)
       setLoading(false)
     }
     load()
-  }, [])
+  }, [router])
 
   const showRoute = useCallback(async (job: JobOrder) => {
     if (!mapInstanceRef.current || !window.google) return

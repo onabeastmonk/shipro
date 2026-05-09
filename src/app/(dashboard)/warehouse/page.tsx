@@ -43,7 +43,14 @@ export default function WarehousePage() {
       if (!session) { router.push('/login'); return }
       setUserId(session.user.id)
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      setUserRole(profile?.role || null)
+      const role = profile?.role || null
+      setUserRole(role)
+
+      // Only admin, fleet_manager, warehouse_manager may access warehouse
+      if (role === 'driver' || role === 'truck_owner' || role === 'client') {
+        router.push('/dashboard')
+        return
+      }
       await loadWarehouses()
     }
     load()

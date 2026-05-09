@@ -46,8 +46,9 @@ function JobsContent() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        setUserId(session.user.id)
-        supabase.from('profiles').select('role').eq('id', session.user.id).single()
+        const uid = session.user.id
+        setUserId(uid)
+        supabase.from('profiles').select('role').eq('id', uid).single()
           .then(({ data }) => setUserRole(data?.role || null))
       }
     })
@@ -127,13 +128,19 @@ function JobsContent() {
   }, [mapJob, mapLoaded])
 
   const load = useCallback(async () => {
+    if (!userId && (userRole === 'driver' || userRole === 'truck_owner')) return // wait for auth
     setLoading(true)
     try {
-      const data = await fetchJobOrders({ status, search: search || undefined })
+      const data = await fetchJobOrders({
+        status,
+        search: search || undefined,
+        userRole: userRole || undefined,
+        userId: userId || undefined,
+      })
       setJobs(data)
     } catch (e) { console.error(e) }
     finally { setLoading(false) }
-  }, [status, search])
+  }, [status, search, userRole, userId])
 
   useEffect(() => {
     const timer = setTimeout(load, 300)
@@ -145,7 +152,9 @@ function JobsContent() {
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="font-heading text-2xl font-bold text-text-primary">Job Orders</h1>
+          <h1 className="font-heading text-2xl font-bold text-text-primary">
+            {userRole === 'driver' ? 'My Jobs' : userRole === 'truck_owner' ? 'My Job Orders' : 'Job Orders'}
+          </h1>
           <p className="text-text-muted text-sm mt-0.5">{jobs.length} orders found</p>
         </div>
         {(userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager') && (
