@@ -338,8 +338,14 @@ export default function TrackingPage() {
   async function loadJobDetail(job: JobOrder) {
     setLoadingDetail(true)
     const { data } = await supabase.from('job_orders')
-      .select(`*, truck:trucks(id, plate_number, truck_type_label, driver_name, owner_name, contact_number),
-        driver:profiles!assigned_driver_id(id, full_name, contact_number),
+      .select(`*,
+        truck:trucks(
+          id, plate_number, truck_type_label, driver_name, driver_contact,
+          owner_name, business_name, contact_number, email, owner_id,
+          owner:profiles!owner_id(id, full_name, contact_number, email, role, company_name)
+        ),
+        driver:profiles!assigned_driver_id(id, full_name, contact_number, email, role),
+        creator:profiles!created_by(id, full_name, contact_number, email, role, company_name),
         shipment_items(*),
         status_logs:delivery_status_logs(*, logged_by_profile:profiles!logged_by(full_name))`)
       .eq('id', job.id).single()
@@ -666,136 +672,253 @@ export default function TrackingPage() {
       {/* ── Job detail popup ── */}
       {(detailJob || loadingDetail) && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-end md:items-center md:justify-center p-0 md:p-4">
-          <div className="bg-bg-secondary w-full md:max-w-lg rounded-t-2xl md:rounded-2xl max-h-[90vh] overflow-y-auto scrollbar-hide">
+          <div className="bg-bg-secondary w-full md:max-w-lg rounded-t-2xl md:rounded-2xl max-h-[92vh] overflow-y-auto scrollbar-hide">
             <div className="w-9 h-1 bg-border-secondary rounded mx-auto mt-3 mb-1 md:hidden" />
             {loadingDetail ? (
-              <div className="p-8 text-center text-text-muted">Loading…</div>
-            ) : detailJob && (
-              <>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-bg-secondary z-10">
-                  <div>
-                    <div className="text-xs text-text-muted font-mono">{detailJob.job_number}</div>
-                    <h2 className="font-heading text-base font-bold">{detailJob.client_name}</h2>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`status-badge ${getJobStatusColor(detailJob.status as any)}`}>
-                      {JOB_STATUS_LABELS[detailJob.status as JobStatus]}
-                    </span>
-                    <button
-                      onClick={() => setDetailJob(null)}
-                      style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: 16 }}
-                    >✕</button>
-                  </div>
-                </div>
+              <div className="p-8 text-center space-y-3">
+                {[1,2,3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}
+              </div>
+            ) : detailJob && (() => {
+              // ── Resolve party data ──────────────────────────────────
+              const truck = detailJob.truck
 
-                <div className="p-5 space-y-4">
-                  {/* Route */}
-                  <div className="bg-bg-tertiary rounded-lg p-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="w-2 h-2 rounded-full bg-success flex-shrink-0" />
-                      <span className="text-sm text-text-primary">{detailJob.pickup_location}</span>
+              // Client: JO text fields are always present. creator profile
+              // may exist if the client has a portal account (role='client').
+              const clientName        = detailJob.client_name
+              const clientContact     = detailJob.contact_person
+              const clientPhone       = detailJob.contact_number
+              const creatorProfile    = detailJob.creator
+              // Use creator profile for chat only when they're actually a client user
+              const clientUserId      = creatorProfile?.role === 'client' ? creatorProfile.id : null
+              const clientEmail       = creatorProfile?.role === 'client' ? creatorProfile.email : null
+
+              // Truck Owner: prefer joined profile (has email + verified contact),
+              // fall back to truck text fields
+              const ownerProfile      = truck?.owner
+              const ownerName         = ownerProfile?.full_name || truck?.owner_name || null
+              const ownerCompany      = ownerProfile?.company_name || truck?.business_name || null
+              const ownerPhone        = ownerProfile?.contact_number || truck?.contact_number || null
+              const ownerEmail        = ownerProfile?.email || truck?.email || null
+              const ownerUserId       = ownerProfile?.id || truck?.owner_id || null
+
+              // Driver: prefer joined profile, fall back to truck text fields
+              const driverProfile     = detailJob.driver
+              const driverName        = driverProfile?.full_name || truck?.driver_name || null
+              const driverPhone       = driverProfile?.contact_number || truck?.driver_contact || null
+              const driverEmail       = driverProfile?.email || null
+              const driverUserId      = detailJob.assigned_driver_id || driverProfile?.id || null
+
+              // Live GPS for this job
+              const liveEntry         = driverUserId ? liveLocations.get(driverUserId) : null
+
+              return (
+                <>
+                  {/* Sticky header */}
+                  <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-bg-secondary z-10">
+                    <div className="min-w-0 flex-1 mr-3">
+                      <div className="text-xs text-text-muted font-mono">{detailJob.job_number}</div>
+                      <h2 className="font-heading text-base font-bold truncate">{clientName}</h2>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-danger flex-shrink-0" />
-                      <span className="text-sm text-text-primary">{detailJob.dropoff_location}</span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`status-badge ${getJobStatusColor(detailJob.status as any)}`}>
+                        {JOB_STATUS_LABELS[detailJob.status as JobStatus]}
+                      </span>
+                      <button
+                        onClick={() => setDetailJob(null)}
+                        style={{ background: '#2a2a2a', border: 'none', borderRadius: '50%', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#a0a0a0', fontSize: 16 }}
+                      >✕</button>
                     </div>
                   </div>
 
-                  {/* Key info */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <InfoBox label="Delivery Date" value={formatDate(detailJob.delivery_date)} />
-                    <InfoBox label="Total Rate" value={detailJob.total_rate ? formatCurrency(detailJob.total_rate) : '—'} />
-                    <InfoBox label="Client" value={detailJob.client_name} />
-                    <InfoBox label="Contact" value={detailJob.contact_number || '—'} />
-                  </div>
+                  <div className="p-5 space-y-5">
 
-                  {/* Truck + driver */}
-                  {detailJob.truck && (
-                    <div className="space-y-2">
-                      <div className="bg-bg-tertiary rounded-lg p-3">
-                        <div className="text-xs text-text-muted uppercase font-semibold mb-1">Assigned Truck</div>
-                        <div className="text-sm font-semibold">{detailJob.truck.plate_number}</div>
-                        <div className="text-xs text-text-muted">
-                          {detailJob.truck.truck_type_label} · Driver: {detailJob.driver?.full_name || detailJob.truck.driver_name}
+                    {/* ── JO summary ── */}
+                    <div className="bg-bg-tertiary rounded-xl p-3.5 space-y-3">
+                      {/* Route */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-start gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-success flex-shrink-0 mt-1" />
+                          <div>
+                            <div className="text-[10px] text-text-muted uppercase font-bold">Pickup</div>
+                            <div className="text-sm text-text-primary leading-snug">{detailJob.pickup_location}</div>
+                          </div>
+                        </div>
+                        <div className="ml-1 w-px h-3 bg-border ml-[5px]" />
+                        <div className="flex items-start gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-danger flex-shrink-0 mt-1" />
+                          <div>
+                            <div className="text-[10px] text-text-muted uppercase font-bold">Drop-off</div>
+                            <div className="text-sm text-text-primary leading-snug">{detailJob.dropoff_location}</div>
+                          </div>
                         </div>
                       </div>
-                      <ContactCard
-                        userId={detailJob.assigned_driver_id}
-                        name={detailJob.truck.owner_name || detailJob.driver?.full_name || detailJob.truck.driver_name}
-                        contactNumber={detailJob.truck.contact_number || detailJob.driver?.contact_number}
-                        label="Truck Owner / Driver"
-                        compact
-                      />
+                      {/* Info row */}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 border-t border-border text-xs text-text-muted">
+                        <span>📅 {formatDate(detailJob.delivery_date)}{detailJob.delivery_time ? ` · ${detailJob.delivery_time}` : ''}</span>
+                        {detailJob.total_rate && <span>💰 {formatCurrency(detailJob.total_rate)}</span>}
+                        {detailJob.shipment_items?.length > 0 && <span>📦 {detailJob.shipment_items.length} item{detailJob.shipment_items.length > 1 ? 's' : ''}</span>}
+                        {detailJob.total_cbm && <span>📐 {Number(detailJob.total_cbm).toFixed(2)} CBM</span>}
+                      </div>
                     </div>
-                  )}
 
-                  {/* Delivery timeline */}
-                  <div>
-                    <div className="text-xs text-text-muted uppercase font-semibold mb-3">Delivery Progress</div>
-                    {(() => {
-                      const currentIdx = DELIVERY_STEPS.indexOf(detailJob.status as JobStatus)
-                      return DELIVERY_STEPS.map((step, i) => {
-                        const isDone = i < currentIdx
-                        const isCurrent = i === currentIdx
-                        const log = (detailJob.status_logs || []).find((l: any) => l.status === step)
-                        return (
-                          <div key={step} className="flex gap-3">
-                            <div className="flex flex-col items-center">
-                              <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${isDone ? 'bg-success' : isCurrent ? 'bg-brand' : 'bg-border-secondary'}`} />
-                              {i < DELIVERY_STEPS.length - 1 && (
-                                <div className={`w-px flex-1 mt-0.5 min-h-[20px] ${isDone ? 'bg-success' : 'bg-border'}`} />
-                              )}
-                            </div>
-                            <div className="flex-1 pb-3">
-                              <div className={`text-sm font-medium ${isDone ? 'text-text-secondary' : isCurrent ? 'text-text-primary' : 'text-text-muted'}`}>
-                                {JOB_STATUS_LABELS[step]}
-                                {isCurrent && <span className="ml-2 text-xs text-warning animate-pulse">← Current</span>}
-                              </div>
-                              {log && (
-                                <div className="text-xs text-text-muted mt-0.5">
-                                  {formatDate(log.logged_at, 'MMM dd h:mm a')}
-                                  {log.note && ` · ${log.note}`}
-                                </div>
-                              )}
-                              {log?.proof_url && (
-                                <a href={log.proof_url} target="_blank" className="text-xs text-info underline mt-0.5 block">
-                                  View proof
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })
-                    })()}
-                  </div>
+                    {/* ── Live GPS status ── */}
+                    {liveEntry && (
+                      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border"
+                        style={{ background: 'rgba(34,197,94,0.08)', borderColor: 'rgba(34,197,94,0.25)' }}>
+                        <span className="w-2 h-2 rounded-full bg-success animate-pulse flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-bold text-success">Live GPS Active</span>
+                          <span className="text-xs text-text-muted ml-2">Updated {timeAgo(liveEntry.timestamp)}</span>
+                        </div>
+                        <span className="text-[10px] text-text-muted font-mono flex-shrink-0">
+                          {liveEntry.lat.toFixed(4)}, {liveEntry.lng.toFixed(4)}
+                        </span>
+                      </div>
+                    )}
+                    {!liveEntry && ACTIVE_STATUSES.includes(detailJob.status) && (
+                      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-border bg-bg-tertiary">
+                        <span className="w-2 h-2 rounded-full bg-text-muted flex-shrink-0" />
+                        <span className="text-xs text-text-muted">No live GPS — driver has not started broadcasting</span>
+                      </div>
+                    )}
 
-                  {/* Shipment items */}
-                  {detailJob.shipment_items?.length > 0 && (
+                    {/* ── Parties ── */}
                     <div>
-                      <div className="text-xs text-text-muted uppercase font-semibold mb-2">
-                        Shipment Items ({detailJob.shipment_items.length})
-                      </div>
-                      <div className="bg-bg-tertiary rounded-lg divide-y divide-border">
-                        {detailJob.shipment_items.map((item: any) => (
-                          <div key={item.id} className="flex justify-between items-center px-3 py-2.5">
-                            <div>
-                              <div className="text-sm font-medium">{item.item_name}</div>
-                              {item.is_fragile && <span className="text-xs text-warning">⚠️ Fragile</span>}
-                            </div>
-                            <div className="text-right">
-                              <div className="text-sm font-semibold">×{item.quantity}</div>
-                              <div className="text-xs text-info">{item.total_cbm?.toFixed(3)} CBM</div>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Parties Involved</div>
+                      <div className="space-y-2.5">
+
+                        {/* Client / Requester */}
+                        <ContactCard
+                          userId={clientUserId}
+                          name={clientName}
+                          role={clientUserId ? 'client' : undefined}
+                          contactNumber={clientPhone}
+                          email={clientEmail}
+                          label={`👁️ Client / Requester${clientContact && clientContact !== clientName ? ` · ${clientContact}` : ''}`}
+                        />
+
+                        {/* Truck Owner */}
+                        {(ownerName || truck) && (
+                          <ContactCard
+                            userId={ownerUserId}
+                            name={ownerName || truck?.owner_name || 'Unknown Owner'}
+                            role="truck_owner"
+                            contactNumber={ownerPhone}
+                            email={ownerEmail}
+                            label={`🚛 Truck Owner${ownerCompany ? ` · ${ownerCompany}` : ''}`}
+                          />
+                        )}
+
+                        {/* Driver */}
+                        {(driverName || truck) && (
+                          <ContactCard
+                            userId={driverUserId}
+                            name={driverName || 'Unassigned'}
+                            role="driver"
+                            contactNumber={driverPhone}
+                            email={driverEmail}
+                            label="👤 Driver"
+                          />
+                        )}
                       </div>
                     </div>
-                  )}
 
-                  <button onClick={() => setDetailJob(null)} className="btn btn-secondary btn-full">Close</button>
-                </div>
-              </>
-            )}
+                    {/* ── Assigned truck ── */}
+                    {truck && (
+                      <div className="bg-bg-tertiary rounded-xl p-3.5">
+                        <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Assigned Truck</div>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-heading text-sm font-bold text-text-primary">🚛 {truck.plate_number}</div>
+                            <div className="text-xs text-text-muted mt-0.5">{truck.truck_type_label}</div>
+                          </div>
+                          {liveEntry && (
+                            <span className="text-[10px] px-2 py-1 rounded-full font-bold"
+                              style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
+                              Live
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Delivery progress ── */}
+                    <div>
+                      <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Delivery Progress</div>
+                      {(() => {
+                        const currentIdx = DELIVERY_STEPS.indexOf(detailJob.status as JobStatus)
+                        return DELIVERY_STEPS.map((step, i) => {
+                          const isDone = i < currentIdx
+                          const isCurrent = i === currentIdx
+                          const log = (detailJob.status_logs || []).find((l: any) => l.status === step)
+                          return (
+                            <div key={step} className="flex gap-3">
+                              <div className="flex flex-col items-center">
+                                <div className={`w-2.5 h-2.5 rounded-full mt-1 flex-shrink-0 ${isDone ? 'bg-success' : isCurrent ? 'bg-brand' : 'bg-border-secondary'}`} />
+                                {i < DELIVERY_STEPS.length - 1 && (
+                                  <div className={`w-px flex-1 mt-0.5 min-h-[20px] ${isDone ? 'bg-success' : 'bg-border'}`} />
+                                )}
+                              </div>
+                              <div className="flex-1 pb-3">
+                                <div className={`text-sm font-medium ${isDone ? 'text-text-secondary' : isCurrent ? 'text-text-primary' : 'text-text-muted'}`}>
+                                  {JOB_STATUS_LABELS[step]}
+                                  {isCurrent && <span className="ml-2 text-xs text-warning animate-pulse">← Current</span>}
+                                </div>
+                                {log && (
+                                  <div className="text-xs text-text-muted mt-0.5">
+                                    {formatDate(log.logged_at, 'MMM dd h:mm a')}
+                                    {log.note && ` · ${log.note}`}
+                                  </div>
+                                )}
+                                {log?.proof_url && (
+                                  <a href={log.proof_url} target="_blank" className="text-xs text-info underline mt-0.5 block">
+                                    View proof
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })
+                      })()}
+                    </div>
+
+                    {/* ── Shipment items ── */}
+                    {detailJob.shipment_items?.length > 0 && (
+                      <div>
+                        <div className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">
+                          Shipment Items ({detailJob.shipment_items.length})
+                        </div>
+                        <div className="bg-bg-tertiary rounded-xl divide-y divide-border overflow-hidden">
+                          {detailJob.shipment_items.map((item: any) => (
+                            <div key={item.id} className="flex justify-between items-center px-3.5 py-2.5">
+                              <div>
+                                <div className="text-sm font-medium text-text-primary">{item.item_name}</div>
+                                {item.is_fragile && <span className="text-xs text-warning">⚠️ Fragile</span>}
+                                {item.requires_special_handling && <span className="text-xs text-info ml-1">🔧 Special handling</span>}
+                              </div>
+                              <div className="text-right flex-shrink-0 ml-3">
+                                <div className="text-sm font-semibold text-text-primary">×{item.quantity}</div>
+                                {item.total_cbm > 0 && <div className="text-xs text-info">{Number(item.total_cbm).toFixed(3)} CBM</div>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Special instructions */}
+                    {detailJob.special_instructions && (
+                      <div className="bg-warning-bg border border-warning-border rounded-xl p-3.5">
+                        <div className="text-xs font-bold text-warning uppercase mb-1">Special Instructions</div>
+                        <p className="text-sm text-warning leading-relaxed">{detailJob.special_instructions}</p>
+                      </div>
+                    )}
+
+                    <button onClick={() => setDetailJob(null)} className="btn btn-secondary btn-full">Close</button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}
