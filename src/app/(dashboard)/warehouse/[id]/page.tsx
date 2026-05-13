@@ -96,6 +96,7 @@ export default function WarehouseDetailPage() {
   const [allWarehouses, setAllWarehouses] = useState<any[]>([])
   const [activeJobs, setActiveJobs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [unauthorized, setUnauthorized] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -135,6 +136,20 @@ export default function WarehouseDetailPage() {
 
       if (role === 'driver' || role === 'truck_owner' || role === 'client') {
         router.push('/dashboard'); return
+      }
+
+      // WM: verify this warehouse is assigned to them before loading anything
+      if (role === 'warehouse_manager') {
+        const { data: wmaRows } = await supabase
+          .from('warehouse_manager_assignments')
+          .select('warehouse_id')
+          .eq('manager_id', session.user.id)
+        const assignedIds = (wmaRows || []).map((r: any) => r.warehouse_id)
+        if (!assignedIds.includes(id)) {
+          setUnauthorized(true)
+          setLoading(false)
+          return
+        }
       }
 
       await fetchData()
@@ -376,6 +391,21 @@ export default function WarehouseDetailPage() {
       {Array(5).fill(0).map((_: any, i: number) => <div key={i} className="skeleton h-16 rounded-lg" />)}
     </div>
   )
+
+  if (unauthorized) return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
+      <div className="text-5xl mb-4">🚫</div>
+      <h2 className="font-heading text-xl font-bold text-text-primary mb-2">Unauthorized Access</h2>
+      <p className="text-sm text-text-muted max-w-xs mb-6">
+        You are not assigned to this warehouse. Contact your Fleet Manager or Admin to get access.
+      </p>
+      <Link href="/warehouse"
+        className="btn btn-primary flex items-center gap-2">
+        <ChevronLeft size={16} /> Back to My Warehouses
+      </Link>
+    </div>
+  )
+
   if (!warehouse) return <div className="text-center p-8 text-text-muted">Warehouse not found</div>
 
   const canEditStatus = userRole === 'admin' || userRole === 'fleet_manager' || userRole === 'warehouse_manager'

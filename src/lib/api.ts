@@ -104,8 +104,44 @@ export async function fetchJobOrders(filters?: {
       return []
     }
   } else if (userRole === 'warehouse_manager' && userId) {
-    // Warehouse managers see all jobs (they need to manage loading status for any job)
-    // No additional filter needed — they can see all jobs to update loading status
+    // WM only sees jobs connected to their assigned warehouses.
+    // Step 1: resolve assigned warehouse IDs
+    const { data: wmaRows } = await supabase
+      .from('warehouse_manager_assignments')
+      .select('warehouse_id')
+      .eq('manager_id', userId)
+    const warehouseIds = (wmaRows || []).map((r: any) => r.warehouse_id)
+
+    if (warehouseIds.length === 0) {
+      // No warehouse assigned → return empty result set immediately
+      return []
+    }
+
+    // Step 2: find job_order_ids that touch any of those warehouses
+    // via warehouse_movements (from/to) OR warehouse_inventory (reserved item)
+    const whFilter = warehouseIds.join(',')
+    const [movRes, invRes] = await Promise.all([
+      supabase
+        .from('warehouse_movements')
+        .select('job_order_id')
+        .or(`from_warehouse_id.in.(${whFilter}),to_warehouse_id.in.(${whFilter})`)
+        .not('job_order_id', 'is', null),
+      supabase
+        .from('warehouse_inventory')
+        .select('job_order_id')
+        .in('warehouse_id', warehouseIds)
+        .not('job_order_id', 'is', null),
+    ])
+
+    const jobIds = Array.from(new Set([
+      ...(movRes.data || []).map((r: any) => r.job_order_id),
+      ...(invRes.data || []).map((r: any) => r.job_order_id),
+    ].filter(Boolean)))
+
+    if (jobIds.length === 0) {
+      return []
+    }
+    query = query.in('id', jobIds)
   }
   // admin / fleet_manager: see all jobs (no filter)
 
